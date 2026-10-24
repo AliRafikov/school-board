@@ -93,8 +93,11 @@ let clsPage = 0, clsTimer = null;
 
 
 let shortKeys = new Set(); // предметы, которые везде показываем сокращённо
+let fontsChecked = false;
 function renderClasses() {
   clearTimeout(clsTimer);
+  // шрифт грузится с задержкой: замер до загрузки даёт неверную ширину, поэтому повторяем после неё
+  if (!fontsChecked && document.fonts) { fontsChecked = true; document.fonts.ready.then(() => renderClasses()); }
   const now = schoolNow(S.tz), day = now.day > 5 ? 0 : now.day; // в воскресенье показываем понедельник
   const list = S.classes, MAXC = 8;
   if (!list.length) { $('classes').innerHTML = '<div class="empty">Расписание пока не загружено. Его заполняет администратор в панели.</div>'; return; }
@@ -131,7 +134,7 @@ function renderClasses() {
   shortKeys = new Set();
   draw();
   const over = new Set();
-  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth) over.add(sp.dataset.key); });
+  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth + 1) over.add(sp.dataset.key); });
   const fresh = [...over].filter(k => !shortKeys.has(k));
   if (fresh.length) { fresh.forEach(k => shortKeys.add(k)); draw(); }
   // шаг 3: если и сокращение не влезает — уменьшаем шрифт только в этой клетке, буквы остаются полностью

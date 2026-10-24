@@ -61,7 +61,7 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 .col .ls { display:grid; min-height:0; }
 .c { overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:.3vw; padding:0 .8vw; font-size:1.25vw; font-weight:600; min-width:0; }
 .c:nth-child(even) { background:var(--stripe); }
-.c span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.c span { overflow:hidden; text-overflow:clip; white-space:nowrap; }
 .c b { font-weight:700; }
 .c.chg { background:var(--red-bg); color:var(--red); }
 .pdots { position:absolute; right:3vw; bottom:.2vh; display:flex; gap:.4vw; }
