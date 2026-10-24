@@ -1,0 +1,11 @@
+[Unit]
+Description=Резервная копия информационной панели
+
+[Service]
+Type=oneshot
+User=board
+Group=board
+EnvironmentFile=/etc/school-board.env
+WorkingDirectory=/opt/school-board
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning scripts/backup.js
+ReadWritePaths=/var/lib/school-board /var/backups/school-board

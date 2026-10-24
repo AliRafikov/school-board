@@ -1,0 +1,22 @@
+[Unit]
+Description=Информационная панель школы
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=board
+Group=board
+WorkingDirectory=/opt/school-board
+EnvironmentFile=/etc/school-board.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js
+Restart=always
+RestartSec=3
+# защита: сервис видит только свои папки
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/school-board
+
+[Install]
+WantedBy=multi-user.target

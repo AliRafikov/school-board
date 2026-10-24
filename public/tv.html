@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Информационная панель</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/tv.css">
+</head>
+<body class="tv">
+<div class="app" id="board">
+  <header class="top">
+    <div class="brand"><img id="logo" alt="" hidden><span id="school"></span></div>
+    <div class="now"><div id="nowLabel" class="nl">Загрузка…</div><div id="nowCount" class="nc"></div></div>
+    <div class="wx" id="wx" hidden></div>
+    <div class="dt" id="dt">--</div>
+  </header>
+  <main class="mid">
+    <section class="left">
+      <div class="banners" id="banners" hidden></div>
+    </section>
+    <section class="center" id="center">
+      <div class="layer cl" id="cA"></div>
+      <div class="layer cl" id="cB"></div>
+      <div class="cempty"><img id="logoBig" alt="" hidden></div>
+    </section>
+    <aside class="bellsCard">
+      <h2>Расписание звонков:</h2>
+      <div class="bnote" id="bnote" hidden></div>
+      <div class="bhead"><span>урок</span><span>время</span></div>
+      <div id="bells"></div>
+    </aside>
+  </main>
+  <section class="classes" id="classes"></section>
+</div>
+<!-- Постеры и ролики — на весь экран поверх табло -->
+<div id="fs" aria-hidden="true">
+  <div class="layer" id="layerA"></div>
+  <div class="layer" id="layerB"></div>
+  <div class="fs-chip"><b id="fsClock"></b><span id="fsNow"></span></div>
+</div>
+<!-- Срочное сообщение: поверх всего, пока не истечёт время -->
+<div id="urgent" hidden><div class="uwrap"><div class="ut"></div><div class="us"></div><div class="un"></div></div></div>
+<!-- Ночной экран: только время и логотип -->
+<div id="night" hidden><div class="ntime" id="nightClock">--:--</div><img id="nightLogo" alt="" hidden></div>
+<div class="offline" id="offline" hidden>Нет связи с сервером. Показано последнее сохранённое расписание, оно обновится само.</div>
+<script src="/common.js"></script>
+<script src="/tv.js"></script>
+</body>
+</html>

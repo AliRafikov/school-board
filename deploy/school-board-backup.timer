@@ -1,0 +1,9 @@
+[Unit]
+Description=Еженедельная резервная копия панели
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

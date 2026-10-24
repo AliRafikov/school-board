@@ -1,0 +1,334 @@
+// Экран показа (ТВ). Работает автономно: данные берутся из сети или из последней сохранённой копии.
+const REFRESH_MS = 15 * 1000;      // экран спрашивает сервер каждые 15 секунд
+let S = null, slot = { phase: 'off' }, offline = false;
+const $ = id => document.getElementById(id);
+
+// ---------- Верхняя панель: дата, время, текущий урок, обратный отсчёт ----------
+const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const t0 = t => String(t).replace(/^0/, '');
+let lastIso = '';
+function tick() {
+  const now = schoolNow(S && S.tz);
+  const [y, mo, d] = now.iso.split('-');
+  $('dt').textContent = `${WD[now.day]}, ${d}.${mo}.${y.slice(2)} ${pad(now.h)}:${pad(now.m)}`;
+  $('fsClock').textContent = `${pad(now.h)}:${pad(now.m)}`;
+  if (!S) return;
+  renderUrgent();
+  if (lastIso && lastIso !== now.iso) renderAll(); // наступил новый день
+  lastIso = now.iso;
+  slot = currentSlot(S.bells, now);
+  const st = staticNow(), nt = nightNow();
+  if (nt) $('nightClock').textContent = `${pad(now.h)}:${pad(now.m)}`;
+  if (st !== lastStatic || nt !== lastNight) { lastStatic = st; lastNight = nt; applyTheme(); renderAll(); showCenter(); }
+  const L = { lesson: 'Идёт урок · до звонка', break: 'Перемена · до звонка', before: 'До начала уроков', after: 'Уроки закончились', off: 'Выходной' }[slot.phase];
+  $('nowLabel').textContent = L;
+  $('nowCount').textContent = slot.left != null ? fmtLeft(slot.left) : '';
+  $('fsNow').textContent = slot.left != null ? ' · ' + ({ lesson: 'до звонка ', break: 'перемена ', before: 'до уроков ' }[slot.phase] || '') + fmtLeft(slot.left) : '';
+  document.querySelectorAll('#bells .bl').forEach(el => { el.classList.toggle('now', now.day < 6 && now.minutes >= toMin(el.dataset.s) && now.minutes < toMin(el.dataset.e)); });
+  // в 04:00 перезагружаем страницу — защита от утечек памяти за недели работы
+  if (now.h === 4 && now.m === 0 && now.s < 2 && !window.__reloaded) { window.__reloaded = 1; location.reload(); }
+}
+
+// Названия предметов на экране. Полное название — если помещается; сокращение — если нет, и одинаково везде.
+// Правила идут по порядку, первое подошедшее побеждает. Подгруппы (С/К, З/И и т.д.) пишем как в файле.
+const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+const SUBJ_RULES = [
+  [/^пр\.?\s+(.+)$/, (m, t) => { const rest = cap(t.replace(/^пр\.?\s+/i, '')); return { full: 'Пр. ' + rest, short: 'Пр. ' + rest }; }],
+  [/^(английский|англ\.?)(?:\s+(.*))?$/, (m, t) => { const tail = ((/^(английский|англ\.?)(?:\s+(.*))?$/i.exec(t) || [])[2]) || ''; return { full: 'Английский' + (tail ? ' ' + tail : ''), short: 'Англ.' + (tail ? ' ' + tail : '') }; }],
+  [/^родная лит/, () => ({ full: 'Родная литература', short: 'Родная лит.' })],
+  [/^родной язык/, () => ({ full: 'Родной язык', short: 'Род. яз.' })],
+  [/^русский язык/, () => ({ full: 'Русский язык', short: 'Русский язык' })],
+  [/^литератур|^литер\.?$/, () => ({ full: 'Литература', short: 'Литер.' })],
+  [/^математика|^матем\.?$/, () => ({ full: 'Математика', short: 'Матем.' })],
+  [/^физкультура|^физ-?ра$/, () => ({ full: 'Физкультура', short: 'Физ-ра' })],
+  [/^география|^геогр\.?$/, () => ({ full: 'География', short: 'Геогр.' })],
+  [/^биология|^биол\.?$/, () => ({ full: 'Биология', short: 'Биол.' })],
+  [/^информатика|^информ\.?$/, () => ({ full: 'Информатика', short: 'Информ.' })],
+  [/^разговор о важном/, () => ({ full: 'Разговор о важном', short: 'Разг. о важном' })],
+  [/^обществознание|^общество$/, () => ({ full: 'Общество', short: 'Общество' })],
+  [/^(алгебра|геометрия|вероятность|история|физика|химия|изо|музыка|обзр)$/, (m) => ({ full: cap(m[1]).replace(/^Обзр$/i, 'ОБЗР').replace(/^Изо$/i, 'ИЗО'), short: null })],
+];
+// Сочетания (например «труд / англ К»): пишем полностью, английский по правилам выше
+const combo = t => t.split(/\s*\/\s*/).map(part => {
+  const m = /^(английский|англ\.?)(?:\s+(.*))?$/i.exec(part.trim());
+  return m ? { full: 'Английский' + (m[2] ? ' ' + m[2] : ''), short: 'Англ.' + (m[2] ? ' ' + m[2] : '') } : null;
+});
+function subjName(raw) {
+  const t = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!t) return { key: '', full: '', short: '' };
+  const low = t.toLowerCase().replace(/ё/g, 'е');
+  for (const [re, f] of SUBJ_RULES) {
+    const m = re.exec(low);
+    if (m) { const r = f(m, t); const full = r.full, short = r.short || full; return { key: full, full, short }; }
+  }
+  if (/\s*\/\s*/.test(t) && /англ/i.test(t)) {
+    const parts = t.split(/\s*\/\s*/).map(x => x.trim());
+    const join = (k) => parts.map(x => { const m = /^(англ(?:ийский)?\.?)(?:\s+(.*))?$/i.exec(x); return m ? (k === 'full' ? 'Английский' : 'Англ.') + (m[2] ? ' ' + m[2] : '') : cap(x); }).join(' / ');
+    return { key: join('full'), full: join('full'), short: join('short') };
+  }
+  if (t.includes('/')) { const j = t.split(/\s*\/\s*/).map(x => cap(x.trim())).join(' / '); return { key: j, full: j, short: j }; }
+  return { key: cap(t), full: cap(t), short: cap(t) };
+}
+const esc2 = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// ---------- Блоки табло ----------
+let clsPage = 0, clsTimer = null;
+
+
+let shortKeys = new Set(); // предметы, которые везде показываем сокращённо
+function renderClasses() {
+  clearTimeout(clsTimer);
+  const now = schoolNow(S.tz), day = now.day > 5 ? 0 : now.day; // в воскресенье показываем понедельник
+  const list = S.classes, MAXC = 8;
+  if (!list.length) { $('classes').innerHTML = '<div class="empty">Расписание пока не загружено. Его заполняет администратор в панели.</div>'; return; }
+  const pagesN = Math.ceil(list.length / MAXC), per = Math.ceil(list.length / pagesN), pg = clsPage % pagesN;
+  const part = list.slice(pg * per, (pg + 1) * per);
+  // на экране дата сегодня (или завтра, если сегодня воскресенье): замены этой даты уже внутри расписания
+  const ov = (S.overlay || {})[now.day > 5 ? S.tomorrow : S.today] || {};
+  const cancelledN = new Set(S.bells.filter(b => b.cancelled && !b.meal).map(b => b.n));
+  const lessonsOf = c => {
+    const o = ov[c] || {};
+    const base = ((S.schedule[c] || {})[day] || []).map(l => o[l.n] || l);
+    return [...base, ...Object.values(o).filter(x => !base.some(l => l.n === x.n))].sort((a, b) => a.n - b.n);
+  };
+  const maxN = Math.max(1, ...list.flatMap(c => lessonsOf(c).map(l => l.n)));
+  const ns = [...Array(maxN).keys()].map(i => i + 1);
+  const gut = `<div class="gut"><div class="cn">0</div><div class="ls" style="grid-template-rows:repeat(${maxN},minmax(0,1fr))">${ns.map(n => `<span>${n}</span>`).join('')}</div></div>`;
+  const draw = () => {
+    const cols = part.map(c => {
+      const by = Object.fromEntries(lessonsOf(c).map(l => [l.n, l]));
+      return `<div class="col" style="grid-template-rows:auto 1fr"><div class="cn">${esc(c)}</div><div class="ls" style="grid-template-rows:repeat(${maxN},minmax(0,1fr))">` +
+        ns.map(n => {
+          const l = by[n];
+          if (cancelledN.has(n) || (l && l.cancelled)) return '<div class="c chg"></div>';
+          if (!l) return '<div class="c"></div>';
+          const nm = subjName(l.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
+          const sur = t => esc(String(t || '').split(' ')[0]);
+          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(l.room || '')}</b></div>`;
+        }).join('') + '</div></div>';
+    }).join('');
+    $('classes').innerHTML = gut + `<div class="cols" style="grid-template-columns:repeat(${part.length},1fr)">${cols}</div>` + gut +
+      (pagesN > 1 ? `<div class="pdots">${[...Array(pagesN).keys()].map(i => `<i${i === pg ? ' class="on"' : ''}></i>`).join('')}</div>` : '');
+  };
+  // шаг 1: рисуем полными названиями; шаг 2: если хоть одно не помещается — этот предмет сокращаем везде
+  shortKeys = new Set();
+  draw();
+  const over = new Set();
+  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth) over.add(sp.dataset.key); });
+  const fresh = [...over].filter(k => !shortKeys.has(k));
+  if (fresh.length) { fresh.forEach(k => shortKeys.add(k)); draw(); }
+  // шаг 3: если и сокращение не влезает — уменьшаем шрифт только в этой клетке, буквы остаются полностью
+  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => {
+    let fs = parseFloat(getComputedStyle(sp).fontSize), k = 0;
+    while (sp.scrollWidth > sp.clientWidth && k < 14) { fs *= 0.94; sp.style.fontSize = fs + 'px'; k++; }
+  });
+  if (pagesN > 1) clsTimer = setTimeout(() => { clsPage++; renderClasses(); }, 12000);
+}
+
+function renderBells() {
+  const note = $('bnote'); note.textContent = S.bellsNote || ''; note.hidden = !S.bellsNote;
+  $('bells').innerHTML = S.bells.map(b => `<div class="bl${b.was ? ' chg' : ''}${b.cancelled ? ' off' : ''}" data-s="${esc(b.start)}" data-e="${esc(b.end)}"><span>${b.meal ? esc(b.title.toUpperCase()) : b.n}${b.label ? `<small>${esc(b.label.replace(/\s*классов?|\s*классы/i, ' кл'))}</small>` : ''}</span><i></i><span>${b.cancelled ? 'отменён' : `${t0(b.start)}–${t0(b.end)}`}</span></div>`).join('');
+}
+// Логотип: на тёмном фоне (тёмная тема или ночной экран) — тёмный логотип, если он загружен
+const darkBg = () => !!S && (S.theme === 'dark' || nightNow());
+const logoSrc = () => (darkBg() && S.logoDark) || S.logo || '';
+function renderBrand() {
+  const src = logoSrc();
+  $('school').textContent = src ? '' : (S.schoolName || '');
+  [$('logo'), $('logoBig')].forEach(img => { if (src) { img.src = src; img.hidden = false; } else img.hidden = true; });
+  $('nightLogo').src = S.logoDark || S.logo || ''; $('nightLogo').hidden = !(S.logoDark || S.logo);
+}
+// Тема и ночной режим: тёмный фон, на ночь — только время и логотип на весь экран
+function applyTheme() {
+  const night = nightNow();
+  document.body.classList.toggle('dark', darkBg());
+  document.body.classList.toggle('night', night);
+  $('night').hidden = !night;
+  if (night) { $('fs').classList.remove('on'); layers.forEach(l => l.classList.remove('on')); cl.forEach(l => l.classList.remove('on')); }
+}
+// Срочное сообщение: закрывает основную часть экрана, шапка остаётся; пока не сняли в админке.
+// После снятия 5 минут показываем зелёный «Отбой».
+function renderUrgent() {
+  const el = $('urgent');
+  const hhmm = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: (S && S.tz) || 'Europe/Moscow' });
+  let view = null;
+  if (S && S.urgent) {
+    const u = S.urgent;
+    view = { ok: false, key: ['u', u.title, u.source, u.note, u.since].join('|'), title: u.title,
+      sub: [u.source && 'Источник: ' + u.source, u.since && 'введено в ' + hhmm(u.since)].filter(Boolean).join(' · '), note: u.note || '' };
+  } else if (S && S.clear && Date.now() < S.clear.until) {
+    const c = S.clear;
+    view = { ok: true, key: ['c', c.title, c.since].join('|'), title: c.title,
+      sub: [c.source && 'Источник: ' + c.source, c.since && 'отбой в ' + hhmm(c.since)].filter(Boolean).join(' · '), note: '' };
+  }
+  el.hidden = !view;
+  document.body.classList.toggle('urgent', !!view);
+  el.classList.toggle('ok', !!(view && view.ok));
+  if (!view) { el.dataset.k = ''; return; }
+  if (el.dataset.k === view.key) return;
+  el.dataset.k = view.key;
+  el.querySelector('.ut').textContent = view.title;
+  el.querySelector('.us').textContent = view.sub;
+  el.querySelector('.un').textContent = view.note;
+}
+
+function renderAll() { showBanners(); renderClasses(); renderBells(); renderBrand(); tick(); }
+
+// Статичный экран: на уроках (если включено в настройках) или весь день (если включено «держать»)
+let lastStatic = null, lastNight = null;
+// Ночь: только при теме «авто» и времени между «ночь с» и «ночь до» (может идти через полночь)
+function nightNow() {
+  if (!S || S.theme !== 'auto') return false;
+  const n = schoolNow(S.tz).minutes, a = toMin(S.nightFrom || '21:00'), b = toMin(S.nightTo || '07:00');
+  return a <= b ? (n >= a && n < b) : (n >= a || n < b);
+}
+const staticNow = () => !!S && (nightNow() || S.displayMode === 'static' || (S.displayMode !== 'active' && slot.phase === 'lesson'));
+
+// ---------- Показ: таблица → постеры/ролики на весь экран → таблица ----------
+// Постеры, презентации и видео занимают весь экран. Текстовые объявления — на узкой полосе сбоку.
+const layers = [$('layerA'), $('layerB')];
+let front = 0, mediaIdx = 0, started = false;
+
+const eligible = i => {
+  const today = schoolNow(S.tz).iso;
+  return (!i.from || i.from <= today) && (!i.to || i.to >= today) && !(i.breakOnly && slot.phase === 'lesson');
+};
+const weighted = list => list.flatMap(i => Array(i.priority || 1).fill(i)); // приоритет = вес в ротации
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+function build(item, layer) {
+  layer.innerHTML = '';
+  return new Promise(resolve => {
+    let el;
+    if (item.kind === 'video') {
+      el = document.createElement('video'); el.muted = true; el.playsInline = true; el.preload = 'auto'; // со звуком Safari не даёт автозапуск
+      el.setAttribute('muted', ''); el.setAttribute('playsinline', '');
+      el.oncanplay = () => resolve(el); el.onerror = () => resolve(null);
+    } else if (item.kind === 'pdf') {
+      el = document.createElement('iframe'); el.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
+      el.onload = () => resolve(el);
+    } else {
+      el = document.createElement('img'); el.onload = () => resolve(el); el.onerror = () => resolve(null);
+    }
+    el.src = item.kind === 'pdf' ? item.url + '#toolbar=0&navpanes=0' : item.url;
+    layer.append(el);
+    setTimeout(() => resolve(null), 15000); // битый файл не должен вешать показ
+  });
+}
+
+// Показывает один ролик/постер на весь экран; ждёт окончания. Следующий готовится «за кадром» — чёрного экрана нет.
+async function playFullscreen(item) {
+  const back = layers[1 - front];
+  const el = await build(item, back);
+  if (!el) return false;
+  back.classList.add('on'); layers[front].classList.remove('on');
+  const old = layers[front].querySelector('video'); if (old) setTimeout(() => old.pause(), 900);
+  front = 1 - front;
+  $('fs').classList.add('on');
+  if (item.kind === 'video') {
+    await new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } };
+      el.onended = end; el.onerror = end; el.play().catch(end);
+      setTimeout(end, Math.max(item.duration, 5) * 1000 + 60000); });
+  } else await wait(item.duration * 1000);
+  return true;
+}
+
+async function runShow() {
+  for (;;) {
+    await wait(Math.max(10, S.boardSeconds || 45) * 1000);        // таблица на экране
+    if (staticNow() || nightNow()) continue;                        // статичный режим и ночь: постеры не идут
+    const list = weighted(S.carousel.filter(i => i.fullscreen && eligible(i)));
+    if (!list.length) continue;
+    const n = Math.min(3, new Set(list.map(i => i.id)).size);     // за один заход — до трёх материалов
+    let played = 0;
+    for (let k = 0; k < list.length * 2 && played < n; k++) {
+      const item = list[mediaIdx++ % list.length];
+      if (!eligible(item)) continue;
+      if (await playFullscreen(item)) played++;
+    }
+    $('fs').classList.remove('on'); layers.forEach(l => l.classList.remove('on'));
+    await wait(1000); layers.forEach(l => { const v = l.querySelector('video'); if (v) v.pause(); l.innerHTML = ''; });
+  }
+}
+
+// Центральный блок: картинки, ролики и текст с местом «центр» сменяют друг друга
+const cl = [$('cA'), $('cB')];
+let cFront = 0, cIdx = 0, cTimer = null, bIdx = 0, bTimer = null;
+async function showCenter() {
+  clearTimeout(cTimer);
+  if (nightNow()) { cl.forEach(l => l.classList.remove('on')); return; }
+  // постеры центра идут и на уроках (в статичном режиме тоже); логотип — только когда постеров нет
+  const list = weighted(S.carousel.filter(i => i.place === 'center' && eligible(i)));
+  $('center').classList.toggle('hasc', list.length > 0);
+  if (!list.length) { cl.forEach(l => l.classList.remove('on')); cTimer = setTimeout(showCenter, 5000); return; }
+  const item = list[cIdx++ % list.length], back = cl[1 - cFront];
+  let ok = true;
+  if (item.kind === 'text') { back.innerHTML = `<div class="ctext">${esc(item.title)}</div>`; }
+  else { const el = await build(item, back); ok = !!el; if (el && item.kind === 'video') el.play().catch(() => {}); }
+  if (!ok) { cTimer = setTimeout(showCenter, 3000); return; }
+  back.classList.add('on'); cl[cFront].classList.remove('on');
+  const old = cl[cFront].querySelector('video'); if (old) setTimeout(() => old.pause(), 900);
+  cFront = 1 - cFront;
+  cTimer = setTimeout(showCenter, Math.max(3, item.duration || 10) * 1000);
+}
+
+// Маленькие баннеры с QR-кодами: по два на экране, если их больше — листаются
+let bannerKey = '';
+function showBanners() {
+  clearTimeout(bTimer);
+  const list = S.carousel.filter(i => i.place === 'banner' && (i.kind === 'image' || i.kind === 'video') && eligible(i));
+  $('banners').hidden = !list.length;
+  document.querySelector('.mid').classList.toggle('nob', !list.length); // без баннеров центр занимает всю ширину
+  if (!list.length) { bannerKey = ''; return; }
+  const base = staticNow() ? 0 : bIdx;                  // статичный режим: всегда первые два баннера
+  const show = [0, 1].slice(0, Math.min(2, list.length)).map(k => list[(base + k) % list.length]);
+  const key = show.map(x => x.url).join('|');
+  if (key !== bannerKey) { bannerKey = key; $('banners').innerHTML = show.map(x => x.kind === 'video' ? `<video src="${esc(x.url)}" muted loop autoplay playsinline></video>` : `<img src="${esc(x.url)}" alt="${esc(x.title)}">`).join('');
+    $('banners').querySelectorAll('video').forEach(v => { v.muted = true; v.play().catch(() => {}); }); }
+  if (list.length > 2 && !staticNow()) { bIdx += 2; bTimer = setTimeout(showBanners, 12000); }
+}
+
+// Предзагрузка медиа в кэш Service Worker — для работы без интернета.
+function prefetch() { (S.carousel || []).forEach(i => i.url && fetch(i.url).catch(() => {})); }
+
+// «Обновить все экраны» из админки: меняется число refreshEpoch — страница перезагружается.
+function checkEpoch() {
+  const e = String(S.refreshEpoch || 0);
+  const had = store.get('epoch');
+  store.set('epoch', e);
+  if (had != null && had !== e) location.reload();
+}
+
+const screenId = (() => { let id = store.get('screenId'); if (!id) { id = 's' + Math.random().toString(36).slice(2, 10); store.set('screenId', id); } return id; })();
+const ping = () => fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId, version: S ? S.version : '' }) }).catch(() => {});
+
+// ---------- Обновление данных ----------
+// Погода в шапке: обновляется раз в 15 минут, если данных нет — строка скрыта
+let wxAt = 0;
+async function loadWeather() {
+  if (Date.now() - wxAt < 15 * 60e3) return;
+  wxAt = Date.now();
+  try {
+    const w = await (await fetch('/api/weather', { cache: 'no-store' })).json();
+    const el = $('wx');
+    if (w && typeof w.temp === 'number') { el.textContent = `${w.temp > 0 ? '+' : ''}${w.temp}°C${w.text ? ' · ' + w.text : ''}`; el.hidden = false; }
+    else el.hidden = true;
+  } catch { wxAt = 0; }
+}
+async function refresh() {
+  loadWeather();
+  const r = await loadState();
+  offline = r.offline; $('offline').hidden = !offline;
+  if (!r.state) return;
+  const changed = !S || S.version !== r.state.version;
+  S = r.state;
+  if (changed) { checkEpoch(); applyTheme(); renderAll(); prefetch(); }
+  if (!started) { started = true; showCenter(); runShow(); }
+  ping();
+}
+
+setInterval(tick, 1000);
+setInterval(refresh, REFRESH_MS);
+// ночью (в 03:00) повторно прогреваем кэш медиа
+setInterval(() => { const n = schoolNow(S && S.tz); if (S && n.h === 3 && n.m === 0 && n.s < 30) prefetch(); }, 30000);
+refresh().then(tick);

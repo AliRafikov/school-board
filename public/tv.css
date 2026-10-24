@@ -1,0 +1,113 @@
+/* Экран в холле. Светлая тема по макету лицея; всё в vw/vh — одинаково на Full HD и 4K. */
+body.tv { --bg:#e7e8eb; --panel:#fff; --stripe:#f3f3f5; --text:#16181f; --dim:#8b909c; --red:#db4755; --red2:#f2565a; --red-bg:rgba(219,71,85,.12); --accent:#db4755;
+  overflow:hidden; cursor:none; font-size:1.3vw; background:var(--bg); }
+/* тёмная тема (и ночной экран) */
+body.tv.dark { --bg:#0f1116; --panel:#1b1e26; --stripe:#232733; --text:#e9ebf0; --dim:#8a90a0; --red:#ef6470; --red2:#f2787f; --red-bg:rgba(239,100,112,.16); --accent:#ef6470; }
+body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372; }
+.app { height:100vh; display:grid; grid-template-rows: 11vh 1fr 35vh; }
+.top { background:var(--panel); display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:3vw; padding:0 1.8vw; }
+.brand { display:flex; align-items:center; gap:1vw; font-weight:800; font-size:2vw; color:var(--red); min-width:0; }
+.brand img { height:11vh; width:auto; object-fit:contain; }
+.now { text-align:right; line-height:1.1; }
+.nl { font-size:1.15vw; color:var(--dim); }
+.nc { font-size:2.5vw; font-weight:800; color:var(--red); font-variant-numeric:tabular-nums; min-height:1em; }
+.dt { font-size:3.4vw; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.02em; white-space:nowrap; }
+
+.mid { display:grid; grid-template-columns: 14vw 1fr 22vw; gap:1.6vw; padding:1.6vh 1.8vw; min-height:0; }
+.left { display:grid; grid-template-rows:1fr auto; gap:1.6vh; min-height:0; }
+.card { background:var(--panel); border-radius:1.4vw; box-shadow:0 .2vw .8vw rgba(0,0,0,.08); overflow:hidden; min-height:0; }
+.subs { display:flex; flex-direction:column; }
+.subs h3 { margin:0; padding:.7vw 1.4vw; font-size:1.3vw; white-space:nowrap; font-weight:700; color:#fff; background:linear-gradient(90deg,var(--red),#ec8a8d); }
+.subs .th, .subs .tr { display:grid; grid-template-columns:3.2vw 3.6vw 1fr 4.4vw; align-items:baseline; padding:.15vw 1.3vw; }
+.subs .th { color:var(--dim); font-size:.95vw; padding-top:.8vw; }
+.subs .tr { font-size:1.4vw; font-weight:600; }
+.subs .tr span:last-child, .subs .th span:last-child { text-align:right; }
+.subs .tr i { font-style:normal; font-weight:400; color:var(--dim); font-size:.7em; }
+.subs .none { margin:auto; padding:1.5vw; text-align:center; color:var(--dim); font-size:1.3vw; }
+.subs .pg { margin-top:auto; padding:.4vw 1.3vw .7vw; font-size:.9vw; color:var(--dim); text-align:right; }
+
+.banners { display:grid; grid-template-columns:1fr; gap:1.2vh; align-content:center; justify-items:center; }
+.banners[hidden] { display:none; }
+.banners img, .banners video { width:100%; max-height:24vh; aspect-ratio:1/1; object-fit:contain; background:var(--panel); border-radius:1.2vw; box-shadow:0 .2vw .8vw rgba(0,0,0,.15); display:block; }
+
+.center { position:relative; height:49vh; aspect-ratio:16/9; align-self:center; justify-self:center; border-radius:1.8vw; overflow:hidden; background:var(--panel); box-shadow:0 .2vw .8vw rgba(0,0,0,.08); }
+.center .cl { background:var(--panel); }
+.center .cl img, .center .cl video { object-fit:contain; }
+.ctext { font-size:3.4vw; font-weight:800; line-height:1.2; padding:3vw; text-align:center; color:var(--text); }
+.cempty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:0; }
+.center.hasc .cempty { display:none; }  /* логотип — только когда постеров в центре нет */
+.cempty img { height:60%; opacity:.9; }
+.center .cl { z-index:1; }
+
+.bellsCard { padding:.4vh .6vw 0; min-height:0; }
+.bellsCard h2 { margin:0 0 .6vh; font-size:1.75vw; white-space:nowrap; font-weight:800; }
+.bhead { display:flex; justify-content:space-between; font-size:1.5vw; font-weight:700; color:#a6aab3; margin-bottom:.8vh; }
+.bl { display:flex; align-items:baseline; gap:.5vw; font-size:1.3vw; padding:.2vh .4vw; white-space:nowrap; border-radius:.6vw; font-variant-numeric:tabular-nums; }
+.bl i { flex:1; border-bottom:.15vw dotted #b8bcc6; transform:translateY(-.3vh); }
+.bl small { font-size:.62em; color:var(--dim); margin-left:.4vw; }
+.bl.now { background:var(--red); color:#fff; }
+.bl.now i { border-color:rgba(255,255,255,.6); } .bl.now small { color:#ffd9dc; }
+.bl.chg { color:var(--red); font-weight:700; }
+
+.classes { display:grid; grid-template-columns:2.2vw 1fr 2.2vw; gap:.4vw; padding:0 1.2vw 1.6vh; min-height:0; }
+.gut { display:grid; grid-template-rows:auto 1fr; color:#c6c8cf; font-size:1.6vw; text-align:center; }
+.gut .cn { visibility:hidden; font-size:1.5vw; padding-top:.3vw; }
+.gut .ls { display:grid; min-height:0; }
+.gut span { display:flex; align-items:center; justify-content:center; }
+.cols { display:grid; gap:.8vw; min-height:0; }
+.col { background:var(--panel); border-radius:1.2vw; box-shadow:0 .15vw .6vw rgba(0,0,0,.1); display:grid; overflow:hidden; min-height:0; }
+.col .cn { text-align:center; font-weight:800; font-size:1.5vw; color:var(--red); padding-top:.3vw; }
+.col .ls { display:grid; min-height:0; }
+.c { overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:.3vw; padding:0 .8vw; font-size:1.25vw; font-weight:600; min-width:0; }
+.c:nth-child(even) { background:var(--stripe); }
+.c span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.c b { font-weight:700; }
+.c.chg { background:var(--red-bg); color:var(--red); }
+.pdots { position:absolute; right:3vw; bottom:.2vh; display:flex; gap:.4vw; }
+.classes { position:relative; }
+.pdots i { width:.6vw; height:.6vw; border-radius:50%; background:#c6c8cf; } .pdots i.on { background:var(--red); }
+
+.c.chg { font-weight:800; }
+.c.chg span { display:flex; flex-direction:column; line-height:1.05; }
+.c.chg em { display:block; font-style:normal; font-size:.7em; font-weight:600; line-height:1.1; color:var(--red); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.c.chg s { font-size:1.2em; line-height:1.1; font-weight:500; color:#9a6a70; text-decoration:line-through; text-decoration-thickness:.1vw; }
+
+.demoflag { position:fixed; left:50%; top:.6vh; transform:translateX(-50%); z-index:8; background:#db4755; color:#fff; font-weight:800; font-size:1.1vw; padding:.3vw 1.2vw; border-radius:2vw; }
+.demoflag[hidden] { display:none; }
+.empty{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;color:#666;font-size:2.2vh}
+
+/* без баннеров левая колонка скрыта, центр растягивается */
+.mid.nob { grid-template-columns: 0 1fr 22vw; }
+.mid.nob .left { visibility:hidden; }
+
+/* звонки на даты */
+.bnote { font-size:1.05vw; color:var(--red); font-weight:700; margin:0 0 .6vh; }
+.bl.off { color:var(--red); font-weight:700; }
+
+/* шапка: погода */
+.wx { font-size:1.35vw; font-weight:700; color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.wx[hidden] { display:none; }
+/* ночной экран: только время и логотип */
+#night { position:fixed; inset:0; z-index:30; background:#000; color:#c9ccd4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5vh; }
+#night[hidden] { display:none; }
+#night .ntime { font-size:20vw; font-weight:300; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+#night img { height:26vh; width:auto; object-fit:contain; opacity:.9; }
+body.tv.night { cursor:none; }
+
+/* срочное сообщение: закрывает основную часть экрана, шапка с логотипом и временем остаётся */
+#urgent { position:fixed; top:0; left:0; right:0; bottom:0; z-index:50; background:#b8202c; color:#fff; display:flex; align-items:center; justify-content:center; padding:calc(11vh + 3vh) 4vw 3vh; text-align:center; }
+#urgent[hidden] { display:none; }
+#urgent.ok { background:#1a8f5c; }
+#urgent .uwrap { display:flex; flex-direction:column; align-items:center; gap:2.5vh; max-width:94vw; }
+#urgent .ut { font-size:8vw; font-weight:800; line-height:1.05; }
+#urgent .us { font-size:2.6vw; font-weight:700; opacity:.95; }
+#urgent .un { font-size:2.4vw; line-height:1.3; margin-top:1vh; }
+#urgent .un:empty, #urgent .us:empty { display:none; }
+/* во время срочного сообщения: без строки «до урока», без постеров и без ночного экрана */
+body.urgent .now { visibility:hidden; }
+body.urgent .top { position:relative; z-index:60; }
+body.urgent #fs, body.urgent #night { display:none !important; }
+/* текущий звонок — белый текст на красном, даже если он изменён (иначе красный текст на красном не виден) */
+.bl.now.chg, .bl.now.chg small { color:#fff; }
+/* отменённый звонок, который сейчас идёт: тоже белый текст на красном */
+.bl.now.off, .bl.now.off small { color:#fff; }
