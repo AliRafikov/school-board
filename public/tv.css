@@ -8,7 +8,7 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 .top { background:var(--panel); display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:0; padding:0 1.8vw; }
 .top > .now, .top > .wx { margin-right:3vw; }
 .brand { display:flex; align-items:center; gap:1vw; font-weight:800; font-size:2vw; color:var(--red); min-width:0; }
-.brand img { height:11vh; width:auto; object-fit:contain; }
+.brand img { height:8vh; width:auto; object-fit:contain; }
 .now { text-align:right; line-height:1.1; }
 .nl { font-size:1.15vw; color:var(--dim); }
 .nc { font-size:2.5vw; font-weight:800; color:var(--red); font-variant-numeric:tabular-nums; min-height:1em; }

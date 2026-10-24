@@ -61,6 +61,13 @@ function comboName(t) {
   const short = parts.map(p => p.n.short).join(' / ');
   return { key: full, full, short };
 }
+// Номер кабинета, записанный в названии («Англ. К / труд 316/103»): убираем из названия и ставим в колонку кабинета
+function splitRoom(subject, room) {
+  const s = String(subject || '').replace(/\s+/g, ' ').trim();
+  const m = /\s+(\d{3}(?:\s*\/\s*\d{3})?)$/.exec(s);
+  if (!m) return { subject: s, room: room || '' };
+  return { subject: s.slice(0, m.index).trim(), room: room || m[1].replace(/\s+/g, '') };
+}
 // Кабинеты: между совместными кабинетами ровно один «/» («108103» → «108/103»). Нет кабинета у физкультуры — «СЗ» (спортзал)
 function roomText(room, subject) {
   let r = String(room || '').trim();
@@ -112,9 +119,9 @@ function renderClasses() {
           const l = by[n];
           if (cancelledN.has(n) || (l && l.cancelled)) return '<div class="c chg"></div>';
           if (!l) return '<div class="c"></div>';
-          const nm = subjName(l.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
+          const sr = splitRoom(l.subject, l.room), nm = subjName(sr.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
           const sur = t => esc(String(t || '').split(' ')[0]);
-          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(roomText(l.room, l.subject))}</b></div>`;
+          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(roomText(sr.room, sr.subject))}</b></div>`;
         }).join('') + '</div></div>';
     }).join('');
     $('classes').innerHTML = gut + `<div class="cols" style="grid-template-columns:repeat(${part.length},1fr)">${cols}</div>` + gut +
