@@ -135,9 +135,13 @@ function renderClasses() {
   const fresh = [...over].filter(k => !shortKeys.has(k));
   if (fresh.length) { fresh.forEach(k => shortKeys.add(k)); draw(); }
   // шаг 3: если и сокращение не влезает — уменьшаем шрифт только в этой клетке, буквы остаются полностью
+  // уменьшаем шрифт до 60% от обычного; если и так не влезает — название переносится на две строки, без многоточия
   $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => {
-    let fs = parseFloat(getComputedStyle(sp).fontSize), k = 0;
-    while (sp.scrollWidth > sp.clientWidth && k < 14) { fs *= 0.94; sp.style.fontSize = fs + 'px'; k++; }
+    const base = parseFloat(getComputedStyle(sp).fontSize);
+    let fs = base;
+    const fits = () => sp.scrollWidth <= sp.clientWidth + 1 && sp.scrollHeight <= sp.clientHeight + 2;
+    while (!fits() && fs > base * 0.6) { fs *= 0.95; sp.style.fontSize = fs + 'px'; }
+    if (!fits()) { sp.style.whiteSpace = 'normal'; sp.style.lineHeight = '1.05'; }
   });
   if (pagesN > 1) clsTimer = setTimeout(() => { clsPage++; renderClasses(); }, 12000);
 }
