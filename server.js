@@ -100,8 +100,19 @@ async function adminApi(req, res, p, url, user) {
   if (p === '/api/admin/overview' && m === 'GET') {
     if (!need('overview')) return;
     const now = Date.now();
+    const tzNow = getSetting('tz') || 'Europe/Moscow', todayNow = S.todayISO(tzNow);
+    const urgentNow = getSetting('urgent_title') || '';
+    const clearUntil = Number(getSetting('clear_until')) || 0;
+    const shiftNow = getSetting('shift_date') === todayNow && Number(getSetting('shift_minutes')) > 0;
     return json(res, 200, {
       mode: S.mode(), sync: S.status(),
+      status: {
+        urgent: urgentNow ? { title: urgentNow, source: getSetting('urgent_source') || '', since: Number(getSetting('urgent_since')) || 0 } : null,
+        clear: clearUntil > now ? { title: getSetting('clear_title') || '', until: clearUntil } : null,
+        shift: shiftNow ? { from: Number(getSetting('shift_from')), minutes: Number(getSetting('shift_minutes')) } : null,
+        subs_today: db.prepare('SELECT COUNT(DISTINCT date || lessons || subject || cls) c FROM subs WHERE date = ?').get(todayNow).c,
+        screens_offline: db.prepare('SELECT id, name, last_seen FROM screens WHERE last_seen <= ? ORDER BY last_seen ASC').all(now - 3 * 60e3)
+      },
       runs: db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8').all(),
       counts: {
         users: db.prepare('SELECT COUNT(*) c FROM users WHERE active=1').get().c,
@@ -253,11 +264,23 @@ async function adminApi(req, res, p, url, user) {
     if (!need('announcements')) return;
     if (m === 'GET') {
       const title = getSetting('urgent_title') || '';
-      return json(res, 200, { active: !!title, item: title ? { title, source: getSetting('urgent_source') || '', note: getSetting('urgent_note') || '', since: Number(getSetting('urgent_since')) || 0 } : null, presets: URGENT_PRESETS });
+      const clearUntil = Number(getSetting('clear_until')) || 0;
+      return json(res, 200, { active: !!title, item: title ? { title, source: getSetting('urgent_source') || '', note: getSetting('urgent_note') || '', since: Number(getSetting('urgent_since')) || 0 } : null,
+        clear: clearUntil > Date.now() ? { title: getSetting('clear_title') || '', until: clearUntil } : null, presets: URGENT_PRESETS });
     }
     if (m === 'PUT') {
       const b = await readJSON(req);
       const prev = getSetting('urgent_title') || '';
+      if (b.hide_clear) {
+        // убираем зелёный отбой с экранов сразу, не дожидаясь пяти минут
+        const until = Number(getSetting('clear_until')) || 0;
+        if (until > Date.now()) {
+          setSetting('clear_until', '0');
+          audit({ user, action: 'clear_hidden', target: getSetting('clear_title') || 'отбой' });
+          S.bump();
+        }
+        return json(res, 200, { ok: true, active: false });
+      }
       if (!b.preset && !String(b.title || '').trim()) {
         const prevSource = getSetting('urgent_source') || '';
         if (prev) {
@@ -422,7 +445,7 @@ const server = http.createServer(async (req, res) => {
     const p = decodeURIComponent(url.pathname);
 
     // публичное
-    if (p === '/api/weather' && m === 'GET') return json(res, 200, (await require('./lib/weather').weather()) || {});
+    if (p === '/api/weather' && req.method === 'GET') return json(res, 200, (await require('./lib/weather').weather()) || {});
   if (p === '/api/state') {
       const s = S.getState();
       const logo = ['logo.svg', 'logo.png'].find(f => fs.existsSync(path.join(PUBLIC, 'brand', f)));

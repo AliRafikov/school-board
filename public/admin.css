@@ -29,7 +29,22 @@ a { color: var(--brand); }
 .nav a { display: block; padding: 9px 12px; border-radius: 9px; color: var(--ink); text-decoration: none; }
 .nav a:hover { background: var(--bg); }
 .nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
-.side .me { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.side .me { margin-top: auto; padding: 10px 0 0; border-top: 1px solid var(--line); position: relative; }
+.me-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.me-btn:hover { border-color: var(--brand); }
+.me-btn > span:first-child { display: grid; min-width: 0; }
+.me-btn b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-caret { color: var(--dim); }
+.me-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); z-index: 20; display: grid; }
+.me-menu[hidden] { display: none; }
+.me-menu a, .me-menu button { display: block; width: 100%; text-align: left; padding: 9px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); text-decoration: none; cursor: pointer; }
+.me-menu a:hover, .me-menu button:hover { background: var(--bg); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chip { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); text-decoration: none; font-size: 14px; }
+.chip:hover { border-color: var(--brand); }
+.chip[aria-current="page"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
+.tvframe { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #000; }
+.tvframe iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; }
 .main { padding: 24px; min-width: 0; max-width: 1100px; width: 100%; }
 .main > header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .main h1 { font-size: 22px; }

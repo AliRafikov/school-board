@@ -132,7 +132,8 @@ class Client {
   r = await d.req('PUT', '/api/admin/settings', { night_from: '9pm' }); ok(r.s === 400, 'неверное время ночи отклонено');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' }); ok(r.s === 200, 'тема возвращена в «авто»');
-  r = await (await fetch(BASE + '/api/weather')).json(); ok(typeof r === 'object', 'погода отдаётся (или пусто, если нет сети)');
+  const wx = await fetch(BASE + '/api/weather'); const wj = await wx.json().catch(() => null);
+  ok(wx.status === 200 && wj && typeof wj === 'object' && !('error' in wj), 'погода отвечает без ошибки сервера (данные или пусто, если нет сети)');
 
   // срочное сообщение: готовый вариант, своя формулировка, снятие
   r = await d.req('PUT', '/api/admin/urgent', { preset: 'missile' }); ok(r.s === 200 && r.j.active === true, 'готовый вариант «Ракетная опасность» включён одним нажатием');
@@ -145,6 +146,14 @@ class Client {
   r = await d.req('PUT', '/api/admin/urgent', { title: '' }); ok(r.s === 200 && r.j.active === false, 'срочное сообщение снято');
   st = await (await fetch(BASE + '/api/state')).json(); ok(!st.urgent, 'после снятия экран без срочного сообщения');
   ok(st.clear && /^Отбой: /.test(st.clear.title) && st.clear.until > Date.now(), 'после снятия на 5 минут появляется зелёный отбой');
+  r = await d.req('GET', '/api/admin/urgent'); ok(r.s === 200 && r.j.clear && r.j.clear.until > Date.now(), 'админка видит, что отбой показан');
+  r = await d.req('GET', '/api/admin/overview'); ok(r.s === 200 && r.j.status && r.j.status.clear && r.j.status.urgent === null, 'обзор показывает отбой и отсутствие тревоги');
+  ok(r.j.status && typeof r.j.status.subs_today === 'number' && Array.isArray(r.j.status.screens_offline), 'обзор отдаёт замены на сегодня и список экранов не на связи');
+  r = await new Client().req('PUT', '/api/admin/urgent', { hide_clear: true }); ok(r.s === 401 || r.s === 403, 'скрыть отбой без входа нельзя');
+  r = await d.req('PUT', '/api/admin/urgent', { hide_clear: true }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'скрыть отбой без метки отклонено (CSRF)');
+  r = await d.req('PUT', '/api/admin/urgent', { hide_clear: true }); ok(r.s === 200, 'отбой скрыт');
+  st = await (await fetch(BASE + '/api/state')).json(); ok(!st.clear, 'после скрытия зелёного отбоя на экране его нет');
+  r = await d.req('GET', '/api/admin/urgent'); ok(r.s === 200 && r.j.clear === null, 'в админке отбоя тоже нет');
   const toM = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
   // сдвиг звонков на сегодня: с 4-го урока на 30 минут, уроки до него не меняются

@@ -4,7 +4,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fmtDT = t => t ? new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const ago = t => { if (!t) return 'никогда'; const s = Math.round((Date.now() - t) / 1000); if (s < 60) return 'только что'; if (s < 3600) return Math.floor(s / 60) + ' мин назад'; if (s < 86400) return Math.floor(s / 3600) + ' ч назад'; return fmtDT(t); };
 
-let me = null, view = 'overview', brand = { logo: '', school: '' };
+let me = null, view = 'overview', sub = '', brand = { logo: '', school: '' };
 
 async function api(method, path, body, headers = {}) {
   const h = { 'X-Requested-With': 'sb', ...headers };
@@ -24,7 +24,7 @@ const ACTIONS = {
   settings_changed: 'Изменена настройка', media_uploaded: 'Загружен файл', media_updated: 'Изменён файл', media_deleted: 'Удалён файл', media_reordered: 'Изменён порядок файлов',
   sync_manual: 'Ручная синхронизация', screens_refresh: 'Обновление всех экранов', screen_renamed: 'Переименован экран', first_user: 'Создан первый пользователь',
   lesson_changed: 'Изменён урок', lesson_added: 'Добавлен урок', lesson_removed: 'Убран урок', bell_changed: 'Изменён звонок',
-  urgent_started: 'Срочное сообщение', urgent_stopped: 'Срочное сообщение снято', shift_started: 'Сдвиг звонков', shift_reset: 'Сдвиг звонков снят', substitution_added: 'Новая замена', bell_exception_added: 'Звонки на даты', bell_exception_removed: 'Звонки на даты: убрано', substitution_removed: 'Замена убрана', schedule_imported: 'Загружен файл расписания',
+  urgent_started: 'Срочное сообщение', urgent_stopped: 'Отбой отправлен на экраны', clear_hidden: 'Отбой убран с экранов', shift_started: 'Сдвиг звонков', shift_reset: 'Сдвиг звонков снят', substitution_added: 'Новая замена', bell_exception_added: 'Звонки на даты', bell_exception_removed: 'Звонки на даты: убрано', substitution_removed: 'Замена убрана', schedule_imported: 'Загружен файл расписания',
   announcement_added: 'Новое объявление', announcement_changed: 'Изменено объявление', announcement_removed: 'Удалено объявление'
 };
 const FIELD_LABELS = { title: 'название', duration: 'длительность', priority: 'приоритет', date_from: 'дата «с»', date_to: 'дата «по»', break_only: 'только на переменах', active: 'включён', place: 'место показа' };
@@ -69,38 +69,98 @@ function renderPasswordForm(forced) {
 }
 
 // ---------- каркас ----------
-const NAV = [['overview', 'Обзор', () => true], ['schedule', 'Расписание', m => m.can.schedule], ['subs', 'Замены', m => m.can.subs], ['ann', 'Объявления', m => m.can.announcements],
-  ['audit', 'Журнал изменений', m => m.can.audit], ['media', 'Постеры и ролики', m => m.can.media],
-  ['screens', 'Экраны', m => m.can.screens], ['users', 'Пользователи', m => m.can.users], ['settings', 'Настройки', m => m.can.settings], ['help', 'Справка', () => true], ['profile', 'Мой пароль', () => true]];
+const NAV = [['overview', 'Обзор', () => true], ['schedule', 'Расписание', m => m.can.schedule], ['calls', 'Звонки', m => m.can.schedule], ['subs', 'Замены', m => m.can.subs],
+  ['ann', 'Объявления и постеры', m => m.can.announcements || m.can.media], ['system', 'Система', () => true]];
+// разделы внутри «Система»: видны по правам роли
+const SYS = [['screens', 'Экраны', m => m.can.screens, () => viewScreens()], ['users', 'Пользователи', m => m.can.users, () => viewUsers()],
+  ['settings', 'Настройки', m => m.can.settings, () => viewSettings()], ['audit', 'Журнал', m => m.can.audit, () => viewAudit()],
+  ['help', 'Справка', () => true, () => viewHelp()], ['profile', 'Мой профиль', () => true, () => viewProfile()]];
+const sysAllowed = () => SYS.filter(s => s[2](me));
+
+// меню профиля: одно на всё приложение, закрывается по клику вне его
+function setMeMenu(open) {
+  const menu = document.getElementById('meMenu'), btn = document.getElementById('meBtn');
+  if (!menu || !btn) return;
+  menu.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+}
+document.addEventListener('click', e => { if (!e.target.closest('#meBox')) setMeMenu(false); });
+
+function systemTabs() {
+  return `<nav class="chips" aria-label="Разделы системы">${sysAllowed().map(s => `<a class="chip" href="#system/${s[0]}" ${s[0] === sub ? 'aria-current="page"' : ''}>${s[1]}</a>`).join('')}</nav>`;
+}
 
 function shell(title, bodyHtml, actionsHtml = '') {
+  const sysNav = view === 'system' ? systemTabs() : '';
   $app.innerHTML = `<div class="shell"><aside class="side">
     <div class="logo-row">${brand.logo ? `<img src="${esc(brand.logo)}" alt="">` : ''}<span>${esc(brand.school)}</span></div>
     <nav class="nav" aria-label="Разделы">${NAV.filter(n => n[2](me)).map(n => `<a href="#${n[0]}" ${n[0] === view ? 'aria-current="page"' : ''}>${n[1]}</a>`).join('')}</nav>
-    <div class="me"><div><b>${esc(me.name)}</b><div class="muted small">${esc(me.role_label)}</div></div><button class="btn sm" id="lo">Выйти</button></div>
-  </aside><main class="main"><header><h1>${esc(title)}</h1><div class="row">${actionsHtml}</div></header><div id="view">${bodyHtml}</div></main></div>`;
+    <div class="me" id="meBox">
+      <button class="me-btn" id="meBtn" type="button" aria-haspopup="menu" aria-expanded="false">
+        <span><b>${esc(me.name)}</b><span class="muted small">${esc(me.role_label)}</span></span><span class="me-caret" aria-hidden="true">▴</span></button>
+      <div class="me-menu" id="meMenu" role="menu" hidden>
+        <a role="menuitem" href="#system/profile">Мой профиль и пароль</a>
+        <button role="menuitem" type="button" id="lo">Выйти</button>
+      </div>
+    </div>
+  </aside><main class="main"><header><h1>${esc(title)}</h1><div class="row">${actionsHtml}</div></header><div id="view">${sysNav}${bodyHtml}</div></main></div>`;
+  const menu = document.getElementById('meMenu'), btn = document.getElementById('meBtn');
+  btn.onclick = e => { e.stopPropagation(); setMeMenu(menu.hidden); };
   document.getElementById('lo').onclick = async () => { try { await api('POST', '/api/auth/logout'); } catch {} me = null; render(); };
 }
 
 // ---------- обзор ----------
 async function viewOverview() {
   const o = await api('GET', '/api/admin/overview');
-  const s = o.sync;
+  const s = o.sync, st = o.status;
+  const t2 = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const canAnn = me.can.announcements;
+  // плашка «сейчас»: тревога, отбой, сдвиг, замены, экраны
+  const offline = st.screens_offline.filter(x => x.id);
+  const alarmBtn = !canAnn ? '' : st.urgent
+    ? `<button class="btn danger" id="oAlarmOff" type="button">Отправить отбой</button>`
+    : st.clear ? `<button class="btn" id="oClearHide" type="button">Скрыть отбой</button>` : '';
+  const status = `
+    <div class="card" style="margin-bottom:16px"><h2>Сейчас на экранах</h2>
+      <div class="grid" style="margin-top:8px">
+        <div class="stat"><div class="l">Срочное сообщение</div><div class="v" style="font-size:18px">${st.urgent ? `<span class="pill bad">идёт</span> ${esc(st.urgent.title)}` : 'нет'}</div>${st.urgent && st.urgent.since ? `<div class="muted small">с ${t2(st.urgent.since)}</div>` : ''}</div>
+        <div class="stat"><div class="l">Отбой</div><div class="v" style="font-size:18px">${st.clear ? `показан до ${t2(st.clear.until)}` : 'нет'}</div></div>
+        <div class="stat"><div class="l">Сдвиг звонков</div><div class="v" style="font-size:18px">${st.shift ? `на ${st.shift.minutes} мин с ${st.shift.from} урока` : 'нет'}</div>${me.can.schedule ? '<a class="small" href="#calls">Открыть «Звонки»</a>' : ''}</div>
+        <div class="stat"><div class="l">Замены на сегодня</div><div class="v" style="font-size:18px">${st.subs_today}</div>${me.can.subs ? '<a class="small" href="#subs">Открыть «Замены»</a>' : ''}</div>
+        <div class="stat"><div class="l">Экраны на связи</div><div class="v" style="font-size:18px">${o.counts.screens} из ${o.counts.screens_total}</div></div>
+      </div>
+      ${alarmBtn ? `<div class="row" style="margin-top:12px">${alarmBtn}</div>` : ''}
+    </div>`;
+  const attention = [];
+  if (o.counts.lessons === 0) attention.push('Расписание ещё не загружено. Откройте раздел «Расписание» и загрузите файл Excel.');
+  if (offline.length) attention.push('Не на связи: ' + offline.map(x => `«${x.name || x.id}» (с ${t2(x.last_seen)})`).join(', '));
+  if (st.urgent && st.urgent.since && Date.now() - st.urgent.since > 2 * 3600e3) attention.push(`Срочное сообщение висит уже больше двух часов. Проверьте, актуально ли оно.`);
   shell('Обзор', `
-    ${o.counts.lessons === 0 ? '<div class="msg warn" style="margin-bottom:16px">Расписание ещё не загружено. Откройте раздел «Расписание» и загрузите файл Excel.</div>' : ''}
+    ${attention.map(a => `<div class="msg warn" style="margin-bottom:12px">${esc(a)}</div>`).join('')}
     ${s.lastInfo ? `<div class="msg" style="margin-bottom:16px;font-size:14px">В базе: ${esc(s.lastInfo)}</div>` : ''}
+    ${status}
+    <div class="card" style="margin-bottom:16px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Так видит экран</h2><a class="btn sm" href="/tv" target="_blank" rel="noopener">Открыть во весь экран</a></div>
+      <p class="muted small" style="margin:6px 0 10px">Копия экрана для телевизора. Обновляется вместе с ним.</p>
+      <div class="tvframe" id="tvWrap"><iframe src="/tv" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
     <div class="grid">
       <div class="stat"><div class="v">${o.counts.lessons}</div><div class="l">уроков в расписании</div></div>
       <div class="stat"><div class="v">${o.counts.bells}</div><div class="l">звонков и перемен</div></div>
-      <div class="stat"><div class="v">${o.counts.subs}</div><div class="l">замен на сегодня и дальше</div></div>
-      <div class="stat"><div class="v">${o.counts.screens} из ${o.counts.screens_total}</div><div class="l">экранов на связи</div></div>
       <div class="stat"><div class="v">${o.counts.media}</div><div class="l">файлов в показе</div></div>
       <div class="stat"><div class="v">${o.counts.users}</div><div class="l">пользователей</div></div>
     </div>
-    <div class="card"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
+    <div class="card" style="margin-top:16px"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
     me.can.screens ? '<button class="btn primary" id="bRef">Обновить все экраны</button>' : '');
   const b = document.getElementById('bRef');
   if (b) b.onclick = async () => { b.disabled = true; try { await api('POST', '/api/admin/refresh-screens'); b.textContent = 'Отправлено'; setTimeout(render, 900); } catch (e) { alert(e.message); b.disabled = false; } };
+  const off = document.getElementById('oAlarmOff');
+  if (off) off.onclick = async () => { if (!confirm('Отправить отбой на все экраны?')) return; try { await api('PUT', '/api/admin/urgent', { title: '' }); render(); } catch (e) { alert(e.message); } };
+  const hide = document.getElementById('oClearHide');
+  if (hide) hide.onclick = async () => { try { await api('PUT', '/api/admin/urgent', { hide_clear: true }); render(); } catch (e) { alert(e.message); } };
+  // живая миниатюра экрана: страница 1920×1080 уменьшается под ширину карточки
+  const wrap = document.getElementById('tvWrap'), frame = document.getElementById('tvFrame');
+  if (wrap && frame) {
+    const fit = () => { frame.style.transform = `scale(${wrap.clientWidth / 1920})`; };
+    new ResizeObserver(fit).observe(wrap); fit();
+  }
 }
 
 function auditTable(rows) {
@@ -139,14 +199,15 @@ async function viewAudit() {
 }
 
 // ---------- медиа ----------
-async function viewMedia() {
+async function mountMedia() {
   const items = await api('GET', '/api/admin/media');
   const kindLabel = { image: 'Картинка', video: 'Видео', pdf: 'Презентация' };
-  shell('Постеры и ролики', `
+  document.getElementById('mediaBox').innerHTML = `
+    <h2 style="margin:28px 0 12px;font-size:20px">Постеры и ролики</h2>
     <div class="card"><label class="drop" id="drop" for="fileIn">Перетащите сюда файлы или нажмите, чтобы выбрать<br><span class="small">JPG, PNG, PDF, MP4 (видео до 30 МБ, H.264). </span></label>
       <label class="f" style="margin-top:10px;max-width:320px">Куда поставить новые файлы<select id="placeSel"><option value="screen">На весь экран (постеры, ролики)</option><option value="center">В центре экрана</option><option value="banner">Маленький баннер с QR-кодом</option></select></label>
       <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,.mp4,image/jpeg,image/png,application/pdf,video/mp4" multiple hidden><div id="um" style="margin-top:10px"></div></div>
-    <p class="muted small">Файл можно поставить на весь экран, в центр или в маленький баннер с QR-кодом. Видео проигрывается без звука. Текстовые объявления — в разделе «Объявления».</p>
+    <p class="muted small">Файл можно поставить на весь экран, в центр или в маленький баннер с QR-кодом. Видео проигрывается без звука. Текстовые объявления — выше, в этом же разделе.</p>
     <div id="list">${items.map(m => `
       <div class="card media" data-id="${m.id}">
         <div class="thumb">${m.kind === 'image' ? `<img src="${esc(m.url)}" alt="">` : m.kind === 'video' ? `<video src="${esc(m.url)}#t=0.5" muted preload="metadata"></video>` : 'PDF'}</div>
@@ -163,7 +224,7 @@ async function viewMedia() {
             <span style="flex:1"></span><button class="btn sm" data-a="up">↑</button><button class="btn sm" data-a="down">↓</button>
             <button class="btn sm primary" data-a="save">Сохранить</button><button class="btn sm danger" data-a="del">Удалить</button></div>
           <div class="wide" data-m></div>
-        </div></div>`).join('') || '<div class="card muted">Файлов пока нет. Загрузите первый постер.</div>'}</div>`);
+        </div></div>`).join('') || '<div class="card muted">Файлов пока нет. Загрузите первый постер.</div>'}</div>`;
   const um = document.getElementById('um'), drop = document.getElementById('drop'), inp = document.getElementById('fileIn');
   // длину видео узнаём в браузере: он читает заголовок файла без загрузки
   const videoSeconds = f => new Promise(res => { const v = document.createElement('video'); v.preload = 'metadata';
@@ -281,7 +342,7 @@ async function viewHelp() {
     </ul>
 
     <h2>Звонки на дату</h2>
-    <p>Раздел «Замены», карточка «Звонки на дату». Выберите дату или промежуток дат, поправьте время в строке звонка или отметьте «отменён». Обычные звонки не меняются, после этих дат всё возвращается по расписанию. Отменённый урок на экране подсвечивается красным.</p>
+    <p>Раздел «Звонки», карточка «Звонки на дату». Выберите дату или промежуток дат, поправьте время в строке звонка или отметьте «отменён». Обычные звонки не меняются, после этих дат всё возвращается по расписанию. Отменённый урок на экране подсвечивается красным.</p>
 
     <h2>Замены</h2>
     <ul>
@@ -313,14 +374,14 @@ async function viewHelp() {
 
     <h2>Постеры и ролики</h2>
     <ul>
-      <li>Картинки (JPG, PNG), презентации (PDF) и видео (MP4 до 30 МБ) загружаются в «Постеры и ролики».</li>
+      <li>Картинки (JPG, PNG), презентации (PDF) и видео (MP4 до 30 МБ) загружаются во вкладке «Объявления и постеры», блок «Постеры и ролики».</li>
       <li><b>Где показывать</b>: на весь экран, в центре экрана или маленьким баннером. Маленький баннер может быть картинкой или видео. Видео всегда идёт без звука, зациклено.</li>
       <li><b>Длительность видео</b> определяется при загрузке. Ролик на весь экран идёт до конца.</li>
       <li><b>Только на переменах</b> — файл на весь экран не показывается на уроках.</li>
     </ul>
 
     <h2>Срочное сообщение</h2>
-    <p>Во вкладке «Объявления» сверху. Текст появляется поверх всего на всех экранах на выбранное время (5–120 минут) и закрывает расписание и постеры. Снять раньше можно кнопкой «Снять сообщение». В журнале записывается, кто и когда его включил.</p>
+    <p>Во вкладке «Объявления и постеры» сверху, а также в блоке «Сейчас на экранах» на «Обзоре». Текст появляется поверх всего на всех экранах и закрывает расписание и постеры. Чтобы отправить отбой, нажмите «Отправить отбой»: на экранах зелёная плашка на 5 минут. Если она мешает раньше, нажмите «Скрыть отбой», и она уйдёт сразу. В журнале записывается каждое действие.</p>
 
     <h2>Объявления</h2>
     <p>Короткий текст для центра экрана: сколько секунд показывать, приоритет (чем выше, тем чаще), даты показа. Выключенное объявление не показывается, но остаётся в списке.</p>
@@ -365,23 +426,13 @@ async function viewSettings() {
   };
 }
 
-function viewProfile() { const p = renderPasswordForm(false); shell('Мой пароль', p.form); p.wire(); }
+function viewProfile() { const p = renderPasswordForm(false); shell('Мой профиль', p.form); p.wire(); }
 
 // ---------- расписание: большой файл и звонки на даты ----------
 const DAY_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 async function viewSchedule() {
-  const d = await api('GET', '/api/admin/schedule');
   const canEdit = me.can.schedule;
   shell('Расписание', `
-    <div class="card"><h2>Сдвиг звонков на сегодня</h2>
-      <p class="muted small" style="margin-top:0">Для случая, когда занятия возобновляются позже (например, после тревоги). Выберите урок, с которого возобновляем, и на сколько минут сдвинуть. Уроки до него не меняются. С выбранного урока сдвигаются его начало и конец, все перемены после него и конец дня. Действует только сегодня. Сам не возвращается: снимите кнопкой «Вернуть».</p>
-      <div id="shiftNow"></div>
-      <div class="row" style="align-items:flex-end">
-        <label class="f">С какого урока<select id="shFrom">${[...new Set(d.bells.filter(b => !b.meal).map(b => b.n))].sort((a, b) => a - b).map(n => `<option value="${n}">Урок ${n}</option>`).join('')}</select></label>
-        <label class="f">На сколько минут<input type="number" id="shMin" min="1" max="120" value="30" style="width:110px"></label>
-        <button class="btn primary" id="shGo" type="button">Сдвинуть звонки</button>
-      </div>
-      <div id="shMsg" style="margin-top:8px"></div></div>
     <div class="card" id="impCard"><h2>Постоянное расписание: загрузить новый файл</h2>
       <p class="muted small" style="margin-top:0">Постоянное расписание меняется только загрузкой нового большого Excel-файла (.xlsx). Листы: «Расписание» (сетка уроков) и «Звонки» (время уроков, завтрак, обед). Сначала система покажет, что изменится, и только после подтверждения запишет данные. Замены на отдельные дни — в разделе «Замены».</p>
       <div class="row"><label class="f" style="flex:1;min-width:240px">Файл<input type="file" id="xf" accept=".xlsx"></label>
@@ -389,19 +440,6 @@ async function viewSchedule() {
       <div id="xres" style="margin-top:12px"></div></div>
 `);
   if (!canEdit) document.querySelectorAll('button').forEach(b => { if (b.id !== 'xr') b.disabled = true; });
-  // сдвиг звонков на сегодня
-  const shNow = document.getElementById('shiftNow'), shMsg = document.getElementById('shMsg');
-  const shState = await api('GET', '/api/admin/shift');
-  shNow.innerHTML = shState ? `<div class="msg warn" style="margin-bottom:10px"><b>Сейчас сдвинуто:</b> с ${shState.from} урока на ${shState.minutes} мин. <button class="btn sm" id="shOff" type="button" style="margin-left:8px">Вернуть</button></div>` : '';
-  if (shState) document.getElementById('shFrom').value = String(shState.from);
-  document.getElementById('shGo').onclick = async () => {
-    const from = Number(document.getElementById('shFrom').value), minutes = Number(document.getElementById('shMin').value);
-    if (!confirm(`Сдвинуть звонки на ${minutes} мин с ${from} урока на сегодня?`)) return;
-    try { await api('PUT', '/api/admin/shift', { from, minutes }); msg(shMsg, 'Звонки сдвинуты. Экраны обновятся в течение 15 секунд', 'ok'); setTimeout(render, 600); }
-    catch (er) { msg(shMsg, er.message); }
-  };
-  const shOff = document.getElementById('shOff');
-  if (shOff) shOff.onclick = async () => { try { await api('PUT', '/api/admin/shift', { reset: true }); render(); } catch (er) { msg(shMsg, er.message); } };
   // импорт файла
   const xres = document.getElementById('xres');
   let token = null;
@@ -442,8 +480,6 @@ const lessonNumsOf = str => { const out = []; String(str || '').split(',').forEa
 
 async function viewSubs() {
   const [rows, sch] = await Promise.all([api('GET', '/api/admin/subs'), api('GET', '/api/admin/schedule')]);
-  const dRange = (a, b) => a.split('-').reverse().join('.') + (b !== a ? ' – ' + b.split('-').reverse().join('.') : '');
-  const exRowsList = (sch.exceptions || []).map(x => `<tr data-id="${x.id}"><td>${x.meal ? esc(x.title) : 'Урок ' + x.n}</td><td>${dRange(x.date_from, x.date_to)}</td><td>${x.cancelled ? 'урок отменён' : esc(x.start) + '–' + esc(x.end)}</td><td><button class="btn sm danger" data-bx="del" type="button">Убрать</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Изменений звонков нет</td></tr>';
   const groups = new Map();
   for (const r of rows) {
     const k = [r.date, r.lessons, r.subject, r.room, r.teacher, r.absent, r.note].join('|');
@@ -464,14 +500,6 @@ async function viewSubs() {
       <div class="tbl-wrap" style="margin-top:12px"><table class="lessons" id="dayTbl"></table></div>
       <div class="row" style="margin-top:10px"><button class="btn primary" id="daySave" type="button">Сохранить изменения на дату</button></div>
       <div id="dayMsg" style="margin-top:8px"></div></div>
-    <div class="card"><h2>Звонки на дату</h2>
-      <p class="muted small" style="margin-top:0">Выберите дату (или промежуток дат). В строке поправьте время или отметьте «отменён» (урок или перемену: завтрак, обед). Меняется только выбранный период, обычные звонки не трогаются. Пустые строки не меняются.</p>
-      <div class="row"><label class="f">С даты<input type="date" id="bellFrom"></label><label class="f">По дату<input type="date" id="bellTo"></label><button class="btn" id="bellLoad" type="button">Показать звонки</button></div>
-      <div class="tbl-wrap" style="margin-top:12px"><table class="lessons" id="bellTbl"></table></div>
-      <div class="row" style="margin-top:10px"><button class="btn primary" id="bellSave" type="button">Сохранить звонки на период</button></div>
-      <div id="bellMsg" style="margin-top:8px"></div>
-      <h3 style="margin:18px 0 8px;font-size:15px">Изменения звонков, которые уже действуют</h3>
-      <div class="tbl-wrap"><table class="lessons" id="bxTbl"><thead><tr><th>Звонок</th><th>Даты</th><th>Что</th><th></th></tr></thead><tbody>${exRowsList}</tbody></table></div></div>
     <div class="card"><h2>Одна замена вручную</h2>
       <form class="row" id="sf2">
         <label class="f">Дата<input type="date" id="sd" required></label>
@@ -554,9 +582,66 @@ async function viewSubs() {
     catch (er) { msg(dayMsg, er.message); }
   };
 
-  // --- звонки на дату: таблица звонков и сохранение на период ---
+  // --- одна замена вручную ---
+  document.getElementById('sd').value = today;
+  document.getElementById('sf2').onsubmit = async e => {
+    e.preventDefault(); const m = document.getElementById('sm2');
+    try { await api('POST', '/api/admin/subs', { date: document.getElementById('sd').value, lessons: document.getElementById('sl').value, classes: document.getElementById('sc').value, subject: document.getElementById('ss').value, room: document.getElementById('sr').value, teacher: document.getElementById('st').value, absent: document.getElementById('sa').value, note: document.getElementById('sn').value }); render(); }
+    catch (er) { msg(m, er.message); }
+  };
+  document.querySelector('#view').onclick = async e => {
+    const b = e.target.closest('button[data-ids]'); if (!b) return;
+    if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно убрать?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Убрать'; }, 4000); return; }
+    try { await api('DELETE', '/api/admin/subs', { ids: b.dataset.ids.split(',').map(Number) }); render(); } catch (er) { alert(er.message); }
+  };
+}
+
+// ---------- звонки: сдвиг на сегодня, звонки на дату, действующие изменения ----------
+async function viewCalls() {
+  const sch = await api('GET', '/api/admin/schedule');
+  const canEdit = me.can.schedule;
+  const dRange = (a, b) => a.split('-').reverse().join('.') + (b !== a ? ' – ' + b.split('-').reverse().join('.') : '');
+  const exRowsList = (sch.exceptions || []).map(x => `<tr data-id="${x.id}"><td>${x.meal ? esc(x.title) : 'Урок ' + x.n}</td><td>${dRange(x.date_from, x.date_to)}</td><td>${x.cancelled ? 'урок отменён' : esc(x.start) + '–' + esc(x.end)}</td><td><button class="btn sm danger" data-bx="del" type="button">Убрать</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">Изменений звонков нет</td></tr>';
+  const lessonNums = [...new Set(sch.bells.filter(b => !b.meal).map(b => b.n))].sort((a, b) => a - b);
+  shell('Звонки', `
+    <div class="card"><h2>Сдвиг звонков на сегодня</h2>
+      <p class="muted small" style="margin-top:0">Для случая, когда занятия возобновляются позже (например, после тревоги). Выберите урок, с которого возобновляем, и на сколько минут сдвинуть. Уроки до него не меняются. С выбранного урока сдвигаются его начало и конец, все перемены после него и конец дня. Действует только сегодня. Сам не возвращается: снимите кнопкой «Вернуть».</p>
+      <div id="shiftNow"></div>
+      <div class="row" style="align-items:flex-end">
+        <label class="f">С какого урока<select id="shFrom">${lessonNums.map(n => `<option value="${n}">Урок ${n}</option>`).join('')}</select></label>
+        <label class="f">На сколько минут<input type="number" id="shMin" min="1" max="120" value="30" style="width:110px"></label>
+        <button class="btn primary" id="shGo" type="button">Сдвинуть звонки</button>
+      </div>
+      <div id="shMsg" style="margin-top:8px"></div></div>
+    <div class="card"><h2>Звонки на дату</h2>
+      <p class="muted small" style="margin-top:0">Выберите дату (или промежуток дат). В строке поправьте время или отметьте «отменён» (урок или перемену: завтрак, обед). Меняется только выбранный период, обычные звонки не трогаются. Пустые строки не меняются.</p>
+      <div class="row"><label class="f">С даты<input type="date" id="bellFrom"></label><label class="f">По дату<input type="date" id="bellTo"></label><button class="btn" id="bellLoad" type="button">Показать звонки</button></div>
+      <div class="tbl-wrap" style="margin-top:12px"><table class="lessons" id="bellTbl"></table></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="bellSave" type="button">Сохранить звонки на период</button></div>
+      <div id="bellMsg" style="margin-top:8px"></div>
+      <h3 style="margin:18px 0 8px;font-size:15px">Изменения звонков, которые уже действуют</h3>
+      <div class="tbl-wrap"><table class="lessons" id="bxTbl"><thead><tr><th>Звонок</th><th>Даты</th><th>Что</th><th></th></tr></thead><tbody>${exRowsList}</tbody></table></div></div>`);
+  if (!canEdit) document.querySelectorAll('button').forEach(b => { b.disabled = true; });
+
+  // сдвиг звонков на сегодня
+  const shNow = document.getElementById('shiftNow'), shMsg = document.getElementById('shMsg');
+  const shState = await api('GET', '/api/admin/shift');
+  shNow.innerHTML = shState ? `<div class="msg warn" style="margin-bottom:10px"><b>Сейчас сдвинуто:</b> с ${shState.from} урока на ${shState.minutes} мин. <button class="btn sm" id="shOff" type="button" style="margin-left:8px">Вернуть</button></div>` : '';
+  if (shState) document.getElementById('shFrom').value = String(shState.from);
+  document.getElementById('shGo').onclick = async () => {
+    const from = Number(document.getElementById('shFrom').value), minutes = Number(document.getElementById('shMin').value);
+    if (!confirm(`Сдвинуть звонки на ${minutes} мин с ${from} урока на сегодня?`)) return;
+    try { await api('PUT', '/api/admin/shift', { from, minutes }); msg(shMsg, 'Звонки сдвинуты. Экраны обновятся в течение 15 секунд', 'ok'); setTimeout(render, 600); }
+    catch (er) { msg(shMsg, er.message); }
+  };
+  const shOff = document.getElementById('shOff');
+  if (shOff) shOff.onclick = async () => {
+    if (!confirm('Вернуть звонки к обычному расписанию на сегодня?')) return;
+    try { await api('PUT', '/api/admin/shift', { reset: true }); render(); } catch (er) { msg(shMsg, er.message); }
+  };
+
+  // звонки на дату: таблица звонков и сохранение на период
   const bellTbl = document.getElementById('bellTbl'), bellMsg = document.getElementById('bellMsg');
-  const bellsSorted = sch.bells.slice().sort((a, b) => (a.start || '').localeCompare(b.start || ''));
   const drawBells = () => {
     const from = document.getElementById('bellFrom').value;
     if (!from) { bellTbl.innerHTML = '<tr><td class="muted">Выберите дату, с которой меняются звонки</td></tr>'; return; }
@@ -587,38 +672,29 @@ async function viewSubs() {
     }
     msg(bellMsg, `Сохранено звонков: ${done}. Экраны обновятся в течение 15 секунд`, 'ok'); setTimeout(render, 500);
   };
+  // удаление изменения звонка: сначала подтверждение второй кнопкой
   document.getElementById('bxTbl').onclick = async e => {
     const b = e.target.closest('button[data-bx=del]'); if (!b) return;
+    if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно убрать?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Убрать'; }, 4000); return; }
     try { await api('DELETE', '/api/admin/schedule/bell-exceptions/' + b.closest('tr').dataset.id); render(); } catch (er) { msg(bellMsg, er.message); }
   };
   drawBells();
-
-  // --- одна замена вручную ---
-  document.getElementById('sd').value = today;
-  document.getElementById('sf2').onsubmit = async e => {
-    e.preventDefault(); const m = document.getElementById('sm2');
-    try { await api('POST', '/api/admin/subs', { date: document.getElementById('sd').value, lessons: document.getElementById('sl').value, classes: document.getElementById('sc').value, subject: document.getElementById('ss').value, room: document.getElementById('sr').value, teacher: document.getElementById('st').value, absent: document.getElementById('sa').value, note: document.getElementById('sn').value }); render(); }
-    catch (er) { msg(m, er.message); }
-  };
-  document.querySelector('#view').onclick = async e => {
-    const b = e.target.closest('button[data-ids]'); if (!b) return;
-    if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно убрать?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Убрать'; }, 4000); return; }
-    try { await api('DELETE', '/api/admin/subs', { ids: b.dataset.ids.split(',').map(Number) }); render(); } catch (er) { alert(er.message); }
-  };
 }
 
-// ---------- объявления ----------
+// ---------- объявления и постеры ----------
 async function viewAnn() {
   const rows = await api('GET', '/api/admin/announcements');
   const urgent = await api('GET', '/api/admin/urgent');
   const hrs = urgent.item && urgent.item.since ? (Date.now() - urgent.item.since) / 3600e3 : 0;
   const t2 = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  shell('Объявления', `
+  shell('Объявления и постеры', `
     <div class="card"><h2>Срочное сообщение на все экраны</h2>
       <p class="muted small" style="margin-top:0">Нажмите готовый вариант — он сразу появится на всех телевизорах поверх расписания, постеров и ночного экрана. Сообщение висит, пока его не снимут: время окончания никто не угадает. Снимает тот, кто включил, или директор.</p>
       ${urgent.active ? `<div class="msg warn" style="margin-bottom:10px"><b>Сейчас на экранах:</b> «${esc(urgent.item.title)}»${urgent.item.source ? `, источник: ${esc(urgent.item.source)}` : ''}, включено в ${t2(urgent.item.since)}.
         ${hrs >= 2 ? `<br><b>Сообщение висит уже ${Math.floor(hrs)} ч. Проверьте, актуально ли оно, и снимите его.</b>` : ''}
-        <div class="row" style="margin-top:8px"><button class="btn" id="uOff" type="button">Снять сообщение</button></div></div>` : ''}
+        <div class="row" style="margin-top:8px"><button class="btn danger" id="uOff" type="button">Отправить отбой</button></div></div>` : ''}
+      ${urgent.clear ? `<div class="msg ok" style="margin-bottom:10px"><b>Отбой на экранах</b> до ${t2(urgent.clear.until)}.
+        <div class="row" style="margin-top:8px"><button class="btn" id="cHide" type="button">Скрыть отбой</button></div></div>` : ''}
       <div class="row" style="gap:10px">
         ${urgent.presets.map(p => `<button class="btn danger" data-preset="${esc(p.id)}" type="button" style="padding:14px 18px;font-size:15px">${esc(p.title)}</button>`).join('')}
       </div>
@@ -630,7 +706,7 @@ async function viewAnn() {
           <button class="btn danger" id="uOn" type="button">Показать на экранах</button>
         </div></details>
       <div id="um2" style="margin-top:8px"></div></div>
-    <div class="card"><h2>Новое объявление</h2><p class="muted small" style="margin-top:0">Текст показывается в центре экрана, между расписанием и постерами. Строка для ролика или картинки — в разделе «Постеры и ролики».</p>
+    <div class="card"><h2>Новое объявление</h2><p class="muted small" style="margin-top:0">Текст показывается в центре экрана, между расписанием и постерами. Ролики и картинки загружаются ниже, в блоке «Постеры и ролики».</p>
       <form class="row" id="af">
         <label class="f" style="flex:1;min-width:320px">Текст<input type="text" id="at" required maxlength="300" placeholder="Родительское собрание — в четверг в 18:00, актовый зал"></label>
         <label class="f">Секунд<input type="number" id="ad" min="3" max="600" value="10" style="width:90px"></label>
@@ -645,7 +721,8 @@ async function viewAnn() {
         <td><input type="date" data-k="date_from" value="${esc(a.date_from)}"></td><td><input type="date" data-k="date_to" value="${esc(a.date_to)}"></td>
         <td><input type="checkbox" data-k="active" ${a.active ? 'checked' : ''}></td>
         <td style="white-space:nowrap"><button class="btn sm primary" data-a="save" type="button">Сохранить</button> <button class="btn sm danger" data-a="del" type="button">Удалить</button></td></tr>`).join('')}
-      </tbody></table></div>` : '<p class="muted">Объявлений пока нет.</p>'}<div id="al" style="margin-top:8px"></div></div>`);
+      </tbody></table></div>` : '<p class="muted">Объявлений пока нет.</p>'}<div id="al" style="margin-top:8px"></div></div>
+    <div id="mediaBox"></div>`);
   const um2 = document.getElementById('um2');
   const sendUrgent = async body => {
     try { await api('PUT', '/api/admin/urgent', body); msg(um2, 'Сообщение отправлено на экраны', 'ok'); setTimeout(render, 600); }
@@ -663,7 +740,12 @@ async function viewAnn() {
     sendUrgent({ title, source: document.getElementById('us').value.trim(), note: document.getElementById('un').value.trim() });
   };
   const uo = document.getElementById('uOff');
-  if (uo) uo.onclick = async () => { try { await api('PUT', '/api/admin/urgent', { title: '' }); render(); } catch (er) { msg(um2, er.message); } };
+  if (uo) uo.onclick = async () => {
+    if (!confirm('Отправить отбой на все экраны? Зелёная плашка будет показана 5 минут.')) return;
+    try { await api('PUT', '/api/admin/urgent', { title: '' }); render(); } catch (er) { msg(um2, er.message); }
+  };
+  const ch = document.getElementById('cHide');
+  if (ch) ch.onclick = async () => { try { await api('PUT', '/api/admin/urgent', { hide_clear: true }); render(); } catch (er) { msg(um2, er.message); } };
   document.getElementById('af').onsubmit = async e => {
     e.preventDefault(); const m = document.getElementById('am');
     try { await api('POST', '/api/admin/announcements', { title: document.getElementById('at').value, duration: document.getElementById('ad').value, priority: document.getElementById('ap').value, date_from: document.getElementById('af1').value, date_to: document.getElementById('af2').value }); render(); }
@@ -683,23 +765,38 @@ async function viewAnn() {
       }
     } catch (er) { msg(al, er.message); }
   };
+  await mountMedia();
 }
 
 // ---------- запуск ----------
-const VIEWS = { overview: viewOverview, schedule: viewSchedule, subs: viewSubs, ann: viewAnn, audit: viewAudit, media: viewMedia, screens: viewScreens, users: viewUsers, settings: viewSettings, help: viewHelp, profile: viewProfile };
+const VIEWS = { overview: viewOverview, schedule: viewSchedule, calls: viewCalls, subs: viewSubs, ann: viewAnn };
+// старые адреса (#audit, #media, #screens и т. п.) переводим в новые разделы
+const LEGACY = { audit: ['system', 'audit'], screens: ['system', 'screens'], users: ['system', 'users'], settings: ['system', 'settings'], help: ['system', 'help'], profile: ['system', 'profile'], media: ['ann', ''] };
+function readHash() {
+  const [v, s = ''] = location.hash.slice(1).split('/');
+  if (LEGACY[v]) return { v: LEGACY[v][0], s: LEGACY[v][1] };
+  return { v: v || 'overview', s };
+}
 async function render() {
   if (!me) return renderLogin();
   if (me.must_change) { const p = renderPasswordForm(true); $app.innerHTML = `<div class="login"><div style="width:100%;max-width:440px"><h1 style="margin-bottom:14px">Новый пароль</h1>${p.form}</div></div>`; return p.wire(); }
   const allowed = NAV.filter(n => n[2](me)).map(n => n[0]);
   if (!allowed.includes(view)) view = 'overview';
-  try { await VIEWS[view](); } catch (e) { if (me) shell('Ошибка', `<div class="msg err">${esc(e.message)}</div>`); }
+  try {
+    if (view === 'system') {
+      const list = sysAllowed();
+      const cur = list.find(s => s[0] === sub) || list[0];
+      sub = cur[0];
+      await cur[3]();
+    } else await VIEWS[view]();
+  } catch (e) { if (me) shell('Ошибка', `<div class="msg err">${esc(e.message)}</div>`); }
 }
-window.addEventListener('hashchange', () => { view = location.hash.slice(1) || 'overview'; render(); });
+window.addEventListener('hashchange', () => { const r = readHash(); view = r.v; sub = r.s; render(); });
 
 async function boot() {
   try { const st = await (await fetch('/api/state')).json(); brand = { logo: st.logo || '', school: st.schoolName || '' }; } catch { /* нет связи */ }
   try { me = await api('GET', '/api/auth/me'); } catch { me = null; }
-  view = location.hash.slice(1) || 'overview';
+  const r = readHash(); view = r.v; sub = r.s;
   render();
 }
 boot();
