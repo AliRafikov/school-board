@@ -349,9 +349,31 @@ async function loadWeather() {
     else el.hidden = true;
   } catch { wxAt = 0; }
 }
+// ---- привязка: без доступа экран показывает код, админка его подтверждает, и экран получает доступ ----
+let pairTimer = null;
+async function requestCode() {
+  try {
+    const j = await (await fetch('/api/pair/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId }) })).json();
+    if (j.code) $('pairCode').textContent = j.code.slice(0, 3) + ' ' + j.code.slice(3);
+  } catch { /* нет связи — повторим */ }
+}
+function showPairing() {
+  $('pair').hidden = false; $('pairHost').textContent = location.host;
+  if (pairTimer) return;
+  requestCode();
+  pairTimer = setInterval(async () => {
+    try {
+      const j = await (await fetch('/api/pair/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId }) })).json();
+      if (j.status === 'ok') location.reload(); // cookie получена — открываем табло
+      else if (j.status === 'expired') requestCode(); // код устарел — берём новый
+    } catch { /* нет связи — проверим ещё раз */ }
+  }, 3000);
+}
+
 async function refresh() {
   loadWeather();
   const r = await loadState();
+  if (r.unpaired) return showPairing();
   offline = r.offline; $('offline').hidden = !offline;
   if (!r.state) return;
   const changed = !S || S.version !== r.state.version;

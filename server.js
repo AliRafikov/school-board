@@ -78,6 +78,25 @@ function pingAllowed(addr) {
   if (hits.length >= 120) { pingHits.set(addr, hits); return false; }
   hits.push(now); pingHits.set(addr, hits); return true;
 }
+// ---- привязка экрана: код на телевизоре → подтверждение в админке → секретная cookie на телевизоре ----
+// ожидающие привязки живут в памяти 10 минут; секрет хранится в базе только как хэш
+const pairByCode = new Map(), pairByScreen = new Map();
+const SCREEN_COOKIE = 'sb_screen';
+function screenIdFromReq(req) {
+  const tok = A.parseCookies(req.headers.cookie)[SCREEN_COOKIE];
+  if (!tok) return null;
+  const row = db.prepare('SELECT id FROM screens WHERE token_hash=?').get(A.sha(tok));
+  return row ? row.id : null;
+}
+// данные для табло и медиа отдаём только привязанному экрану или вошедшему в админку (предпросмотр)
+const viewerOk = req => !!screenIdFromReq(req) || !!A.userFromReq(req);
+const screenCookie = (token, req) => `${SCREEN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${10 * 365 * 86400}${isHttps(req) ? '; Secure' : ''}`;
+const cleanId = v => String(v || '').replace(/[^\w-]/g, '').slice(0, 40);
+const stateObj = () => {
+  const s = S.getState();
+  const logo = ['logo.svg', 'logo.png'].find(f => fs.existsSync(path.join(PUBLIC, 'brand', f)));
+  return { ...s, logo: logo ? '/brand/' + logo : '', logoDark: fs.existsSync(path.join(PUBLIC, 'brand', 'logo-dark.png')) ? '/brand/logo-dark.png' : '' };
+};
 
 // ---------- загрузка медиа ----------
 function sniff(buf) {
@@ -131,7 +150,7 @@ async function adminApi(req, res, p, url, user) {
         clear: clearUntil > now ? { title: getSetting('clear_title') || '', until: clearUntil } : null,
         shift: shiftNow ? { from: Number(getSetting('shift_from')), minutes: Number(getSetting('shift_minutes')) } : null,
         subs_today: db.prepare('SELECT COUNT(DISTINCT date || lessons || subject || cls) c FROM subs WHERE date = ?').get(todayNow).c,
-        screens_offline: db.prepare('SELECT id, name, last_seen FROM screens WHERE last_seen <= ? AND last_seen > ? ORDER BY last_seen ASC').all(now - 3 * 60e3, now - SCREEN_TTL)
+        screens_offline: db.prepare('SELECT id, name, last_seen FROM screens WHERE token_hash IS NOT NULL AND last_seen <= ? AND last_seen > ? ORDER BY last_seen ASC').all(now - 3 * 60e3, now - SCREEN_TTL)
       },
       runs: db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8').all(),
       counts: {
@@ -140,10 +159,10 @@ async function adminApi(req, res, p, url, user) {
         lessons: db.prepare('SELECT COUNT(*) c FROM lessons').get().c,
         bells: db.prepare('SELECT COUNT(*) c FROM bells').get().c,
         subs: db.prepare('SELECT COUNT(DISTINCT date || lessons || subject || cls) c FROM subs WHERE date >= ?').get(S.shiftISO(S.todayISO(), -1)).c,
-        screens: db.prepare('SELECT COUNT(*) c FROM screens WHERE last_seen > ?').get(now - 3 * 60e3).c,
-        screens_total: db.prepare('SELECT COUNT(*) c FROM screens WHERE last_seen > ?').get(now - SCREEN_TTL).c
+        screens: db.prepare('SELECT COUNT(*) c FROM screens WHERE token_hash IS NOT NULL AND last_seen > ?').get(now - 3 * 60e3).c,
+        screens_total: db.prepare('SELECT COUNT(*) c FROM screens WHERE token_hash IS NOT NULL').get().c
       },
-      recent: db.prepare("SELECT * FROM audit WHERE action NOT IN ('login','login_failed','logout') ORDER BY id DESC LIMIT 8").all()
+      recent: A.can(user, 'audit') ? db.prepare("SELECT * FROM audit WHERE action NOT IN ('login','login_failed','logout') ORDER BY id DESC LIMIT 8").all() : []
     });
   }
 
@@ -155,7 +174,9 @@ async function adminApi(req, res, p, url, user) {
     const q = (url.searchParams.get('q') || '').trim(); if (q) { where.push('(target LIKE ? OR was LIKE ? OR now LIKE ? OR user_name LIKE ? OR action LIKE ?)'); const l = `%${q}%`; args.push(l, l, l, l, l); }
     if (url.searchParams.get('hide_logins') === '1') where.push("action NOT IN ('login','login_failed','logout')");
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
-    return json(res, 200, { total: db.prepare(`SELECT COUNT(*) c FROM audit ${w}`).get(...args).c, rows: db.prepare(`SELECT * FROM audit ${w} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset) });
+    const rows = db.prepare(`SELECT * FROM audit ${w} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset);
+    if (user.role === 'zavuch') rows.forEach(r => { if (r.action === 'login_failed') r.details = ''; }); // адреса неудачных входов — только директору и IT
+    return json(res, 200, { total: db.prepare(`SELECT COUNT(*) c FROM audit ${w}`).get(...args).c, rows });
   }
 
   // --- расписание: импорт xlsx, уроки, звонки ---
@@ -246,7 +267,28 @@ async function adminApi(req, res, p, url, user) {
   }
   if (p === '/api/admin/screens' && m === 'GET') {
     if (!need('screens')) return;
-    return json(res, 200, db.prepare('SELECT * FROM screens ORDER BY last_seen DESC').all());
+    return json(res, 200, db.prepare('SELECT id,name,last_seen,ip,ua,version,first_seen,paired_at FROM screens WHERE token_hash IS NOT NULL ORDER BY last_seen DESC').all());
+  }
+  if (p === '/api/admin/screens/pair' && m === 'POST') { // подтверждаем код с экрана
+    if (!need('screens')) return;
+    const b = await readJSON(req), code = String(b.code || '').replace(/\D/g, '');
+    const e = pairByCode.get(code);
+    if (!e || e.expires < Date.now()) return fail(res, 404, 'Код не найден или устарел. Обновите код на экране');
+    const token = crypto.randomBytes(32).toString('hex'), now = Date.now();
+    const name = String(b.name || '').trim().slice(0, 60);
+    db.prepare(`INSERT INTO screens(id,name,last_seen,first_seen,token_hash,paired_at) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET token_hash=excluded.token_hash, paired_at=excluded.paired_at, name=COALESCE(NULLIF(excluded.name,''), screens.name)`)
+      .run(e.screenId, name, now, now, A.sha(token), now);
+    e.token = token; // телевизор заберёт cookie при следующей проверке
+    audit({ user, action: 'screen_paired', target: name || e.screenId });
+    return json(res, 200, { ok: true });
+  }
+  const up = /^\/api\/admin\/screens\/([\w-]+)\/unpair$/.exec(p);
+  if (up && m === 'POST') { // отвязать: телевизор снова попросит код
+    if (!need('screens')) return;
+    db.prepare('UPDATE screens SET token_hash=NULL, paired_at=NULL WHERE id=?').run(up[1]);
+    audit({ user, action: 'screen_unpaired', target: up[1] });
+    return json(res, 200, { ok: true });
   }
   const sc = /^\/api\/admin\/screens\/([\w-]+)$/.exec(p);
   if (sc && m === 'PATCH') {
@@ -470,24 +512,50 @@ const server = http.createServer(async (req, res) => {
 
     // публичное
     if (p === '/api/weather' && req.method === 'GET') return json(res, 200, (await require('./lib/weather').weather()) || {});
-  if (p === '/api/state') {
-      const s = S.getState();
-      const logo = ['logo.svg', 'logo.png'].find(f => fs.existsSync(path.join(PUBLIC, 'brand', f)));
-      return json(res, 200, { ...s, logo: logo ? '/brand/' + logo : '', logoDark: fs.existsSync(path.join(PUBLIC, 'brand', 'logo-dark.png')) ? '/brand/logo-dark.png' : '' });
+  // код привязки для телевизора, который ещё не привязан
+    if (p === '/api/pair/request' && req.method === 'POST') {
+      if (!pingAllowed(ip(req))) return fail(res, 429, 'Слишком часто');
+      const b = await readJSON(req), id = cleanId(b.id);
+      if (id.length < 6) return fail(res, 400, 'Нет id экрана');
+      const now = Date.now();
+      let e = pairByScreen.get(id);
+      if (!e || e.expires < now) {
+        if (e) pairByCode.delete(e.code);
+        let code; do { code = String(crypto.randomInt(0, 1000000)).padStart(6, '0'); } while (pairByCode.has(code));
+        e = { code, screenId: id, expires: now + 10 * 60e3, token: null };
+        pairByScreen.set(id, e); pairByCode.set(code, e);
+      }
+      return json(res, 200, { code: e.code, expires_in: Math.round((e.expires - now) / 1000) });
     }
+    // телевизор спрашивает, подтвердили ли код в админке; если да — выдаём cookie
+    if (p === '/api/pair/claim' && req.method === 'POST') {
+      const b = await readJSON(req), id = cleanId(b.id), e = pairByScreen.get(id);
+      if (!e || e.expires < Date.now()) return json(res, 200, { status: 'expired' });
+      if (!e.token) return json(res, 200, { status: 'waiting' });
+      pairByScreen.delete(id); pairByCode.delete(e.code);
+      return json(res, 200, { status: 'ok' }, { 'Set-Cookie': screenCookie(e.token, req) });
+    }
+    if (p === '/api/state') {
+      if (!viewerOk(req)) return fail(res, 401, 'Нужна привязка экрана');
+      return json(res, 200, stateObj());
+    }
+    // публичная страница расписания «/» — прежние данные без привязки
+    if (p === '/api/public/state') return json(res, 200, stateObj());
     if (p === '/api/health') return json(res, 200, { ok: true, version: S.getState().version });
     if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
-    if (p === '/api/ping' && req.method === 'POST') { // экран сообщает, что он жив
-      const b = await readJSON(req); const id = String(b.id || '').replace(/[^\w-]/g, '').slice(0, 40);
-      if (!id) return fail(res, 400, 'id');
+    if (p === '/api/ping' && req.method === 'POST') { // привязанный экран сообщает, что он жив; без привязки не считается
+      const id = screenIdFromReq(req);
+      if (!id) return fail(res, 401, 'Нужна привязка экрана');
       if (!pingAllowed(ip(req))) return fail(res, 429, 'Слишком часто');
-      if (db.prepare('SELECT COUNT(*) c FROM screens').get().c >= 300 && !db.prepare('SELECT 1 FROM screens WHERE id=?').get(id)) return fail(res, 507, 'Слишком много экранов');
-      const now = Date.now();
-      db.prepare(`INSERT INTO screens(id,last_seen,ip,ua,version,first_seen) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen, ip=excluded.ip, ua=excluded.ua, version=excluded.version`)
-        .run(id, now, ip(req), String(req.headers['user-agent'] || '').slice(0, 160), String(b.version || '').slice(0, 20), now);
+      const b = await readJSON(req), now = Date.now();
+      db.prepare('UPDATE screens SET last_seen=?, ip=?, ua=?, version=? WHERE id=?')
+        .run(now, ip(req), String(req.headers['user-agent'] || '').slice(0, 160), String(b.version || '').slice(0, 20), id);
       return json(res, 200, { ok: true });
     }
-    if (p.startsWith('/media/')) return serveFile(req, res, path.join(S.MEDIA, path.basename(p)), 'public, max-age=31536000, immutable');
+    if (p.startsWith('/media/')) {
+      if (!viewerOk(req)) return fail(res, 401, 'Нужна привязка экрана');
+      return serveFile(req, res, path.join(S.MEDIA, path.basename(p)), 'public, max-age=31536000, immutable');
+    }
 
     // вход / выход
     if (p === '/api/auth/login' && req.method === 'POST') {
@@ -539,10 +607,11 @@ const server = http.createServer(async (req, res) => {
     console.log('==============================================================\n');
   }
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+  db.prepare('DELETE FROM screens WHERE token_hash IS NULL').run(); // старые записи без привязки больше не нужны
   S.getState(); // прогреваем кэш расписания
   setInterval(() => {
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
-    db.prepare("DELETE FROM screens WHERE last_seen < ? AND (name IS NULL OR name = '')").run(Date.now() - SCREEN_TTL);
+    db.prepare('DELETE FROM screens WHERE token_hash IS NULL AND last_seen < ?').run(Date.now() - SCREEN_TTL);
   }, 3600e3);
   server.listen(PORT, HOST, () => console.log(`Панель: http://localhost:${PORT}/  (ТВ: /tv, админка: /admin)${sharp ? ', сжатие картинок включено' : ''}`));
 })();

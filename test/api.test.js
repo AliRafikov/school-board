@@ -1,6 +1,8 @@
 // Сквозная проверка API. Запуск: BASE=http://localhost:3111 PASS=<пароль директора> node test/api.test.js
 const BASE = process.env.BASE || 'http://localhost:3000';
 let fails = 0;
+let ADMIN_COOKIE = ''; // состояние читаем со входом директора (как предпросмотр в админке)
+const stateJ = async () => (await fetch(BASE + '/api/state', { headers: { Cookie: ADMIN_COOKIE } })).json();
 const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) fails++; };
 class Client {
   constructor() { this.cookie = ''; }
@@ -23,6 +25,25 @@ class Client {
   r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: 'short' }); ok(r.s === 400, 'слабый пароль отклонён');
   const NEWPW = 'Licey24-secure';
   r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: NEWPW }); ok(r.s === 200, 'пароль сменён');
+  ADMIN_COOKIE = d.cookie;
+  {
+    // привязка телевизора: без привязки данных и пинга нет; код → подтверждение → cookie
+    const tv = new Client();
+    let rr = await tv.req('GET', '/api/state'); ok(rr.s === 401, 'без привязки табло данных не получает');
+    rr = await tv.req('POST', '/api/ping', { version: 'x' }); ok(rr.s === 401, 'без привязки пинг не засчитывается');
+    rr = await tv.req('POST', '/api/pair/request', { id: 'tvtest-01' }); ok(rr.s === 200 && /^\d{6}$/.test(rr.j.code), 'телевизор получил код привязки');
+    const code = rr.j.code;
+    rr = await tv.req('POST', '/api/pair/claim', { id: 'tvtest-01' }); ok(rr.j.status === 'waiting', 'до подтверждения телевизор ждёт');
+    rr = await d.req('POST', '/api/admin/screens/pair', { code: '000000', name: 'x' }); ok(rr.s === 404, 'неверный код отклонён');
+    rr = await d.req('POST', '/api/admin/screens/pair', { code, name: 'Холл тест' }); ok(rr.s === 200, 'директор подтвердил код');
+    rr = await tv.req('POST', '/api/pair/claim', { id: 'tvtest-01' }); ok(rr.j.status === 'ok' && tv.cookie.startsWith('sb_screen='), 'телевизор получил cookie');
+    rr = await tv.req('GET', '/api/state'); ok(rr.s === 200, 'привязанный экран получает данные');
+    rr = await tv.req('POST', '/api/ping', { version: 't' }); ok(rr.s === 200, 'привязанный экран засчитывается');
+    const list = await d.req('GET', '/api/admin/screens'); ok(list.j.some(x => x.name === 'Холл тест') && list.j.every(x => !('token_hash' in x)), 'экран виден в админке, секрет не отдаётся');
+    rr = await d.req('POST', '/api/admin/screens/tvtest-01/unpair'); ok(rr.s === 200, 'экран отвязан');
+    rr = await tv.req('GET', '/api/state'); ok(rr.s === 401, 'после отвязки данных нет');
+    rr = await tv.req('POST', '/api/pair/claim', { id: 'tvtest-01' }); ok(rr.j.status !== 'ok', 'без нового кода cookie не выдаётся');
+  }
   r = await d.req('GET', '/api/admin/overview'); ok(r.s === 200 && r.j.sync, 'обзор доступен после смены пароля');
 
   r = await d.req('POST', '/api/admin/users', { login: 'it1', name: 'Айдар (IT)', role: 'it' }); ok(r.s === 201 && r.j.temp_password, 'создан IT-администратор');
@@ -44,14 +65,14 @@ class Client {
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'Тест день', teacher: '', room: '2' }, { cls: '5Б', n: 1, subject: 'Тест день', teacher: '', room: '2' }] });
   ok(r.s === 200 && r.j.saved === 2, 'замены на дату сохранены пачкой (2 ячейки)');
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'отменён', teacher: '', room: '' }] }); ok(r.s === 200, 'урок отменён для класса на дату');
-  let st0 = await (await fetch(BASE + '/api/state')).json();
+  let st0 = await stateJ();
   ok(st0.overlay && st0.overlay['2026-10-26'] && st0.overlay['2026-10-26']['5А'][1].cancelled === true, 'отмена попала в состояние экрана');
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-13-40', items: [{ cls: '5А', n: 1, subject: 'x' }] }); ok(r.s === 400, 'неверная дата отклонена');
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [] }); ok(r.s === 400, 'пустые изменения отклонены');
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'x' }] }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'замены на дату без метки отклонены (CSRF)');
   r = await z.req('GET', '/api/admin/subs'); const dayRows = r.j.filter(x => x.date === '2026-10-26');
   r = await z.req('DELETE', '/api/admin/subs', { ids: dayRows.map(x => x.id) }); ok(r.s === 200, 'тестовые замены на дату убраны');
-  st0 = await (await fetch(BASE + '/api/state')).json(); ok(!(st0.overlay || {})['2026-10-26'], 'после удаления экран без замен на дату');
+  st0 = await stateJ(); ok(!(st0.overlay || {})['2026-10-26'], 'после удаления экран без замен на дату');
 
   // IT: не может трогать директора
   const it = new Client();
@@ -70,7 +91,7 @@ class Client {
   r = await z.req('POST', '/api/admin/media/upload', Buffer.from('<?php echo 1; ?>' + ' '.repeat(40)), { 'X-File-Name': 'a.php' }); ok(r.s === 400, 'не-медиа файл отклонён');
   r = await z.req('PATCH', '/api/admin/media/' + mid, { duration: 15, date_from: '2026-10-01', date_to: '2026-09-01' }); ok(r.s === 400, 'неверные даты отклонены');
   r = await z.req('PATCH', '/api/admin/media/' + mid, { duration: 15, priority: 3 }); ok(r.s === 200 && r.j.duration === 15, 'параметры показа сохранены');
-  let st = await (await fetch(BASE + '/api/state')).json(); ok(st.carousel.some(c => c.id === 'm' + mid && c.fullscreen), 'постер попал в карусель ТВ на весь экран');
+  let st = await stateJ(); ok(st.carousel.some(c => c.id === 'm' + mid && c.fullscreen), 'постер попал в карусель ТВ на весь экран');
   r = await z.req('DELETE', '/api/admin/media/' + mid); ok(r.s === 200, 'постер удалён');
 
   // журнал
@@ -137,14 +158,14 @@ class Client {
 
   // срочное сообщение: готовый вариант, своя формулировка, снятие
   r = await d.req('PUT', '/api/admin/urgent', { preset: 'missile' }); ok(r.s === 200 && r.j.active === true, 'готовый вариант «Ракетная опасность» включён одним нажатием');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(st.urgent && st.urgent.title === 'Ракетная опасность' && st.urgent.source === 'МЧС России' && st.urgent.since > 0, 'вариант попал на экран с источником и временем включения');
+  st = await stateJ(); ok(st.urgent && st.urgent.title === 'Ракетная опасность' && st.urgent.source === 'МЧС России' && st.urgent.since > 0, 'вариант попал на экран с источником и временем включения');
   r = await d.req('PUT', '/api/admin/urgent', { preset: 'nope' }); ok(r.s === 400, 'неизвестный готовый вариант отклонён');
   r = await d.req('PUT', '/api/admin/urgent', { title: 'Тест', source: 'Школа' }); ok(r.s === 200 && r.j.active === true, 'свой текст включён');
   r = await d.req('PUT', '/api/admin/urgent', { preset: 'drone' }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'срочное сообщение без метки отклонено (CSRF)');
   r = await new Client().req('PUT', '/api/admin/urgent', { preset: 'drone' }); ok(r.s === 401 || r.s === 403, 'срочное сообщение без входа отклонено');
   r = await d.req('GET', '/api/admin/urgent'); ok(r.s === 200 && Array.isArray(r.j.presets) && r.j.presets.length >= 2, 'готовые варианты отдаются админке');
   r = await d.req('PUT', '/api/admin/urgent', { title: '' }); ok(r.s === 200 && r.j.active === false, 'срочное сообщение снято');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(!st.urgent, 'после снятия экран без срочного сообщения');
+  st = await stateJ(); ok(!st.urgent, 'после снятия экран без срочного сообщения');
   ok(st.clear && /^Отбой: /.test(st.clear.title) && st.clear.until > Date.now(), 'после снятия на 5 минут появляется зелёный отбой');
   r = await d.req('GET', '/api/admin/urgent'); ok(r.s === 200 && r.j.clear && r.j.clear.until > Date.now(), 'админка видит, что отбой показан');
   r = await d.req('GET', '/api/admin/overview'); ok(r.s === 200 && r.j.status && r.j.status.clear && r.j.status.urgent === null, 'обзор показывает отбой и отсутствие тревоги');
@@ -152,14 +173,14 @@ class Client {
   r = await new Client().req('PUT', '/api/admin/urgent', { hide_clear: true }); ok(r.s === 401 || r.s === 403, 'скрыть отбой без входа нельзя');
   r = await d.req('PUT', '/api/admin/urgent', { hide_clear: true }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'скрыть отбой без метки отклонено (CSRF)');
   r = await d.req('PUT', '/api/admin/urgent', { hide_clear: true }); ok(r.s === 200, 'отбой скрыт');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(!st.clear, 'после скрытия зелёного отбоя на экране его нет');
+  st = await stateJ(); ok(!st.clear, 'после скрытия зелёного отбоя на экране его нет');
   r = await d.req('GET', '/api/admin/urgent'); ok(r.s === 200 && r.j.clear === null, 'в админке отбоя тоже нет');
   const toM = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
   // сдвиг звонков на сегодня: с 4-го урока на 30 минут, уроки до него не меняются
-  const base = (await (await fetch(BASE + '/api/state')).json()).bells;
+  const base = (await stateJ()).bells;
   r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }); ok(r.s === 200 && r.j.active === true, 'сдвиг звонков с 4-го урока на 30 минут');
-  st = await (await fetch(BASE + '/api/state')).json();
+  st = await stateJ();
   const lesson = (bells, n) => bells.find(b => !b.meal && b.n === n);
   ok(lesson(st.bells, 3).start === lesson(base, 3).start, 'урок 3 (до сдвига) не меняется');
   ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start) + 30 && toM(lesson(st.bells, 4).end) === toM(lesson(base, 4).end) + 30, 'урок 4 и его конец сдвинуты на 30 минут');
@@ -168,7 +189,7 @@ class Client {
   r = await d.req('PUT', '/api/admin/shift', { from: 99, minutes: 30 }); ok(r.s === 400, 'сдвиг с несуществующего урока отклонён');
   r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 0 }); ok(r.s === 400, 'нулевой сдвиг отклонён');
   r = await d.req('PUT', '/api/admin/shift', { reset: true }); ok(r.s === 200 && r.j.active === false, 'сдвиг возвращён');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start), 'после «Вернуть» звонки как по расписанию');
+  st = await stateJ(); ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start), 'после «Вернуть» звонки как по расписанию');
   r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'сдвиг без метки отклонён (CSRF)');
   r = await d.req('PUT', '/api/admin/shift', { reset: true });
 
@@ -178,7 +199,7 @@ class Client {
   const annId = r.j && r.j.id;
   r = await d.req('PATCH', '/api/admin/announcements/' + annId, { title: 'Тест объявление', duration: 2, priority: 1, date_from: '', date_to: '', active: true }); ok(r.s === 200 && r.j.ok, 'слишком короткая длительность поднята до допустимой');
   r = await d.req('GET', '/api/admin/announcements'); ok(r.j.find(a => a.id === annId).duration === 3, 'длительность сохранена как 3 с');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(st.carousel.some(c => c.id === 'a' + annId && c.place === 'center'), 'объявление попало на экран в центр');
+  st = await stateJ(); ok(st.carousel.some(c => c.id === 'a' + annId && c.place === 'center'), 'объявление попало на экран в центр');
   r = await d.req('DELETE', '/api/admin/announcements/' + annId); ok(r.s === 200, 'объявление удалено');
 
   // звонки на даты: отмена урока на сегодня и возврат
@@ -186,17 +207,17 @@ class Client {
   const todayIso = new Date().toISOString().slice(0, 10);
   r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: lessonBell.id, date_from: todayIso, date_to: '', cancelled: true }); ok(r.s === 201, 'урок отменён на дату');
   const exId = r.j.id;
-  st = await (await fetch(BASE + '/api/state')).json(); ok(st.bells.some(b => b.n === lessonBell.n && b.cancelled), 'отмена попала на экран (звонки)');
+  st = await stateJ(); ok(st.bells.some(b => b.n === lessonBell.n && b.cancelled), 'отмена попала на экран (звонки)');
   r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: lessonBell.id, date_from: todayIso, date_to: todayIso, cancelled: false, start: '25:00', end: '08:00' }); ok(r.s === 400, 'неверное время звонка на дату отклонено');
   r = await d.req('GET', '/api/admin/schedule'); const mealBell = r.j.bells.find(b => b.meal);
   if (mealBell) {
     r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: mealBell.id, date_from: todayIso, date_to: todayIso, cancelled: true }); ok(r.s === 201, 'перемена (завтрак/обед) отменена на дату');
     const mid = r.j.id;
-    st = await (await fetch(BASE + '/api/state')).json(); ok(st.bells.some(b => b.meal && b.cancelled), 'отмена перемены попала на экран');
+    st = await stateJ(); ok(st.bells.some(b => b.meal && b.cancelled), 'отмена перемены попала на экран');
     r = await d.req('DELETE', '/api/admin/schedule/bell-exceptions/' + mid); ok(r.s === 200, 'отмена перемены убрана');
   }
   r = await d.req('DELETE', '/api/admin/schedule/bell-exceptions/' + exId); ok(r.s === 200, 'отмена на дату убрана');
-  st = await (await fetch(BASE + '/api/state')).json(); ok(!st.bells.some(b => b.cancelled), 'после удаления урок снова идёт');
+  st = await stateJ(); ok(!st.bells.some(b => b.cancelled), 'после удаления урок снова идёт');
 
   // выход
   r = await d.req('POST', '/api/auth/logout'); r = await d.req('GET', '/api/admin/overview'); ok(r.s === 401, 'после выхода доступ закрыт');

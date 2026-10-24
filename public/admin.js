@@ -39,6 +39,7 @@ async function api(method, path, body, headers = {}) {
 const msg = (el, text, kind = 'err') => { el.innerHTML = text ? `<div class="msg ${kind}" role="${kind === 'err' ? 'alert' : 'status'}">${esc(text)}</div>` : ''; };
 
 const ACTIONS = {
+  screen_paired: 'Экран привязан', screen_unpaired: 'Экран отвязан',
   login: 'Вход', login_failed: 'Неудачный вход', logout: 'Выход', password_changed: 'Смена пароля', password_reset: 'Сброс пароля',
   user_created: 'Создан пользователь', user_role_changed: 'Изменена роль', user_renamed: 'Изменено имя', user_enabled: 'Пользователь включён', user_disabled: 'Пользователь отключён',
   settings_changed: 'Изменена настройка', media_uploaded: 'Загружен файл', media_updated: 'Изменён файл', media_deleted: 'Удалён файл', media_reordered: 'Изменён порядок файлов',
@@ -177,7 +178,7 @@ async function viewOverview() {
       <div class="seg seg-wide" id="sTheme">${[['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([v, l]) => `<button type="button" data-st="${v}" aria-pressed="${stheme === v}">${l}</button>`).join('')}</div></div>` : ''}
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px"><div><h2 style="margin:0">Так видит экран</h2><p class="muted small" style="margin:4px 0 0">Копия телевизора, обновляется вместе с ним</p></div><a class="btn sm" href="/tv" target="_blank" rel="noopener">Во весь экран</a></div>
       <div class="tvframe" id="tvWrap"><iframe src="/tv?preview=1" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
-    <div class="card"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
+    ${me.can.audit ? `<div class="card"><h2>Последние действия</h2>${auditTable(o.recent)}</div>` : ''}`,
     me.can.screens ? '<button class="btn primary" id="bRef">Обновить все экраны</button>' : '');
   const b = document.getElementById('bRef');
   if (b) b.onclick = async () => { b.disabled = true; try { await api('POST', '/api/admin/refresh-screens'); b.textContent = 'Отправлено'; setTimeout(render, 900); } catch (e) { alert(e.message); b.disabled = false; } };
@@ -314,12 +315,33 @@ async function mountMedia() {
 // ---------- экраны ----------
 async function viewScreens() {
   const rows = await api('GET', '/api/admin/screens');
-  shell('Экраны', `<div class="card"><p class="muted" style="margin-top:0">Экран сообщает о себе раз в минуту. Если связи нет больше трёх минут, он помечается как «не на связи». Без интернета экран продолжает показывать сохранённые данные.</p>
-    <div class="tbl-wrap"><table><thead><tr><th>Название</th><th>Состояние</th><th>Последний сигнал</th><th>Версия данных</th><th>Устройство</th></tr></thead><tbody>
+  const table = rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Название</th><th>Состояние</th><th>Последний сигнал</th><th>Версия данных</th><th>Устройство</th><th></th></tr></thead><tbody>
     ${rows.map(r => { const on = Date.now() - r.last_seen < 180000; return `<tr><td><input type="text" value="${esc(r.name || '')}" placeholder="${esc(r.id)}" data-id="${esc(r.id)}" style="max-width:220px"></td>
-      <td>${on ? '<span class="pill ok">на связи</span>' : '<span class="pill bad">не на связи</span>'}</td><td class="num">${esc(ago(r.last_seen))}</td><td class="muted small">${esc(r.version)}</td><td class="muted small">${esc((r.ua || '').slice(0, 60))}<br>${esc(r.ip || '')}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted">Ни один экран ещё не подключался. Откройте адрес /tv на телевизоре.</td></tr>'}
-    </tbody></table></div></div>`, '<button class="btn primary" id="bRef">Обновить все экраны</button>');
+      <td>${on ? '<span class="pill ok">на связи</span>' : '<span class="pill bad">не на связи</span>'}</td><td class="num">${esc(ago(r.last_seen))}</td><td class="muted small">${esc(r.version)}</td><td class="muted small">${esc((r.ua || '').slice(0, 60))}<br>${esc(r.ip || '')}</td>
+      <td><button class="btn sm danger" type="button" data-unpair="${esc(r.id)}">Отвязать</button></td></tr>`; }).join('')}
+    </tbody></table></div>` : '<p class="muted" style="margin:0">Пока ни один экран не привязан. Откройте табло — на нём появится код.</p>';
+  shell('Экраны', `
+    <div class="card"><h2>Привязать экран</h2>
+      <p class="muted small" style="margin:4px 0 14px">На телевизоре откройте табло: на нём появится код из 6 цифр. Введите его здесь. Код действует 10 минут.</p>
+      <form class="row" id="pf"><label class="f">Код с экрана<input type="text" id="pc" inputmode="numeric" autocomplete="off" maxlength="7" required placeholder="123 456" style="max-width:200px;font-size:20px;letter-spacing:.12em"></label>
+        <label class="f">Название<input type="text" id="pn" maxlength="60" placeholder="Холл, 1 этаж" style="max-width:260px"></label>
+        <button class="btn primary" type="submit">Привязать экран</button></form><div id="pm" style="margin-top:10px"></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Привязанные экраны</h2></div>
+      <p class="muted small" style="margin:0 0 12px">Экран сообщает о себе раз в 15 секунд. Если связи нет больше трёх минут, он помечается как «не на связи».</p>
+      ${table}</div>`, '<button class="btn primary" id="bRef">Обновить все экраны</button>');
   document.getElementById('bRef').onclick = async e => { e.target.disabled = true; try { await api('POST', '/api/admin/refresh-screens'); e.target.textContent = 'Отправлено'; } catch (er) { alert(er.message); } };
+  document.getElementById('pf').onsubmit = async e => {
+    e.preventDefault();
+    const pm = document.getElementById('pm');
+    try {
+      await api('POST', '/api/admin/screens/pair', { code: document.getElementById('pc').value, name: document.getElementById('pn').value });
+      msg(pm, 'Экран привязан. Через несколько секунд он откроет табло.', 'ok'); setTimeout(render, 1500);
+    } catch (er) { msg(pm, er.message, 'err'); }
+  };
+  document.querySelectorAll('[data-unpair]').forEach(b => b.onclick = async () => {
+    if (!confirm('Отвязать экран? Он снова покажет код, пока его не привяжут заново.')) return;
+    try { await api('POST', '/api/admin/screens/' + b.dataset.unpair + '/unpair'); render(); } catch (er) { alert(er.message); }
+  });
   document.querySelectorAll('input[data-id]').forEach(i => i.onchange = () => api('PATCH', '/api/admin/screens/' + i.dataset.id, { name: i.value }).catch(e => alert(e.message)));
 }
 

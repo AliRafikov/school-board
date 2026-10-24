@@ -8,9 +8,10 @@ const store = {
 };
 
 // Возвращает {state, offline}. При ошибке сети — последняя сохранённая версия.
-async function loadState() {
+async function loadState(url = '/api/state') {
   try {
-    const r = await fetch('/api/state', { cache: 'no-store' });
+    const r = await fetch(url, { cache: 'no-store' });
+    if (r.status === 401) return { state: null, offline: false, unpaired: true }; // экран не привязан
     if (!r.ok) throw new Error(r.status);
     const state = await r.json();
     store.set('state', state);

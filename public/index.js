@@ -19,7 +19,7 @@ function render() {
 }
 
 async function load() {
-  const r = await loadState();
+  const r = await loadState('/api/public/state');
   $('offline').hidden = !r.offline;
   if (!r.state) return render();
   const first = !S; S = r.state;
