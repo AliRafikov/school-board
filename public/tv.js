@@ -48,25 +48,35 @@ const SUBJ_RULES = [
   [/^обществознание|^общество$/, () => ({ full: 'Общество', short: 'Общество' })],
   [/^(алгебра|геометрия|вероятность|история|физика|химия|изо|музыка|обзр)$/, (m) => ({ full: cap(m[1]).replace(/^Обзр$/i, 'ОБЗР').replace(/^Изо$/i, 'ИЗО'), short: null })],
 ];
-// Сочетания (например «труд / англ К»): пишем полностью, английский по правилам выше
-const combo = t => t.split(/\s*\/\s*/).map(part => {
-  const m = /^(английский|англ\.?)(?:\s+(.*))?$/i.exec(part.trim());
-  return m ? { full: 'Английский' + (m[2] ? ' ' + m[2] : ''), short: 'Англ.' + (m[2] ? ' ' + m[2] : '') } : null;
-});
+// Сочетание через «/» (например «Труд / информатика», «Англ. С / труд»): каждую часть называем по правилам выше,
+// части идут в одном порядке: английский, информатика, труд, остальные — как есть. Так одна пара пишется одинаково везде.
+const PART_ORDER = [/^англ/i, /^информ/i, /^труд/i];
+function comboName(t) {
+  const parts = t.split(/\s*\/\s*/).map(x => x.trim()).filter(Boolean).map(x => {
+    const low = x.toLowerCase().replace(/ё/g, 'е');
+    const rank = PART_ORDER.findIndex(re => re.test(low));
+    return { n: subjName(x), rank: rank < 0 ? 99 : rank };
+  }).sort((a, b) => a.rank - b.rank);
+  const full = parts.map(p => p.n.full).join(' / ');
+  const short = parts.map(p => p.n.short).join(' / ');
+  return { key: full, full, short };
+}
+// Кабинеты: между совместными кабинетами ровно один «/» («108103» → «108/103»). Нет кабинета у физкультуры — «СЗ» (спортзал)
+function roomText(room, subject) {
+  let r = String(room || '').trim();
+  if (!r) return /физкультура|физ-?ра/i.test(String(subject || '')) ? 'СЗ' : '';
+  if (/^\d{6}$/.test(r)) r = r.slice(0, 3) + '/' + r.slice(3);
+  return r.split(/\s*\/\s*/).filter(Boolean).join('/');
+}
 function subjName(raw) {
   const t = String(raw || '').replace(/\s+/g, ' ').trim();
   if (!t) return { key: '', full: '', short: '' };
+  if (t.includes('/')) return comboName(t);
   const low = t.toLowerCase().replace(/ё/g, 'е');
   for (const [re, f] of SUBJ_RULES) {
     const m = re.exec(low);
     if (m) { const r = f(m, t); const full = r.full, short = r.short || full; return { key: full, full, short }; }
   }
-  if (/\s*\/\s*/.test(t) && /англ/i.test(t)) {
-    const parts = t.split(/\s*\/\s*/).map(x => x.trim());
-    const join = (k) => parts.map(x => { const m = /^(англ(?:ийский)?\.?)(?:\s+(.*))?$/i.exec(x); return m ? (k === 'full' ? 'Английский' : 'Англ.') + (m[2] ? ' ' + m[2] : '') : cap(x); }).join(' / ');
-    return { key: join('full'), full: join('full'), short: join('short') };
-  }
-  if (t.includes('/')) { const j = t.split(/\s*\/\s*/).map(x => cap(x.trim())).join(' / '); return { key: j, full: j, short: j }; }
   return { key: cap(t), full: cap(t), short: cap(t) };
 }
 const esc2 = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -104,7 +114,7 @@ function renderClasses() {
           if (!l) return '<div class="c"></div>';
           const nm = subjName(l.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
           const sur = t => esc(String(t || '').split(' ')[0]);
-          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(l.room || '')}</b></div>`;
+          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(roomText(l.room, l.subject))}</b></div>`;
         }).join('') + '</div></div>';
     }).join('');
     $('classes').innerHTML = gut + `<div class="cols" style="grid-template-columns:repeat(${part.length},1fr)">${cols}</div>` + gut +

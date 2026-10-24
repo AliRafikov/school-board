@@ -205,8 +205,10 @@ async function mountMedia() {
   document.getElementById('mediaBox').innerHTML = `
     <h2 style="margin:28px 0 12px;font-size:20px">Постеры и ролики</h2>
     <div class="card"><label class="drop" id="drop" for="fileIn">Перетащите сюда файлы или нажмите, чтобы выбрать<br><span class="small">JPG, PNG, PDF, MP4 (видео до 30 МБ, H.264). </span></label>
-      <label class="f" style="margin-top:10px;max-width:320px">Куда поставить новые файлы<select id="placeSel"><option value="screen">На весь экран (постеры, ролики)</option><option value="center">В центре экрана</option><option value="banner">Маленький баннер с QR-кодом</option></select></label>
-      <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,.mp4,image/jpeg,image/png,application/pdf,video/mp4" multiple hidden><div id="um" style="margin-top:10px"></div></div>
+      <label class="f" style="margin-top:10px;max-width:320px">Куда поставить новые файлы<select id="placeSel"><option value="" selected disabled>Выберите, где показывать</option><option value="screen">На весь экран (постеры, ролики)</option><option value="center">В центре экрана</option><option value="banner">Маленький баннер с QR-кодом</option></select></label>
+      <div class="row" style="margin-top:10px"><button class="btn" id="dirBtn" type="button">Загрузить папку</button><span class="muted small">Все подходящие файлы из папки загрузятся по очереди.</span></div>
+      <input type="file" id="fileIn" accept=".jpg,.jpeg,.png,.pdf,.mp4,image/jpeg,image/png,application/pdf,video/mp4" multiple hidden>
+      <input type="file" id="dirIn" webkitdirectory multiple hidden><div id="um" style="margin-top:10px"></div></div>
     <p class="muted small">Файл можно поставить на весь экран, в центр или в маленький баннер с QR-кодом. Видео проигрывается без звука. Текстовые объявления — выше, в этом же разделе.</p>
     <div id="list">${items.map(m => `
       <div class="card media" data-id="${m.id}">
@@ -231,16 +233,27 @@ async function mountMedia() {
     v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); res(Math.round(v.duration) || 0); };
     v.onerror = () => res(0); v.src = URL.createObjectURL(f); });
   const upload = async files => {
-    for (const f of files) {
-      msg(um, `Загрузка: ${f.name}…`, 'ok');
-      const headers = { 'X-File-Name': encodeURIComponent(f.name), 'X-Place': document.getElementById('placeSel').value, 'Content-Type': 'application/octet-stream' };
+    const place = document.getElementById('placeSel').value;
+    if (!place) return msg(um, 'Сначала выберите, где показывать файлы', 'err');
+    const list = files.filter(f => /\.(jpe?g|png|pdf|mp4)$/i.test(f.name));
+    const skipped = files.length - list.length;
+    if (!list.length) return msg(um, 'Подходящих файлов нет: JPG, PNG, PDF или MP4', 'err');
+    const failed = [];
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      msg(um, `Загрузка ${i + 1} из ${list.length}: ${f.name}…`, 'ok');
+      const headers = { 'X-File-Name': encodeURIComponent(f.name), 'X-Place': place, 'Content-Type': 'application/octet-stream' };
       if (/\.mp4$/i.test(f.name)) headers['X-Duration'] = String(await videoSeconds(f));
       try { await api('POST', '/api/admin/media/upload', f, headers); }
-      catch (e) { msg(um, `${f.name}: ${e.message}`); return; }
+      catch (e) { failed.push(`${f.name}: ${e.message}`); }
     }
+    if (failed.length || skipped) alert([...failed, skipped ? `Пропущено файлов другого типа: ${skipped}` : ''].filter(Boolean).join('\n'));
     render();
   };
   inp.onchange = () => upload([...inp.files]);
+  const dirIn = document.getElementById('dirIn');
+  document.getElementById('dirBtn').onclick = () => { if (!document.getElementById('placeSel').value) return msg(um, 'Сначала выберите, где показывать файлы', 'err'); dirIn.click(); };
+  dirIn.onchange = () => upload([...dirIn.files]);
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', e => upload([...e.dataTransfer.files]));
