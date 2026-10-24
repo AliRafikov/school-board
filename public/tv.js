@@ -137,9 +137,18 @@ function renderClasses() {
   $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth + 1) over.add(sp.dataset.key); });
   const fresh = [...over].filter(k => !shortKeys.has(k));
   if (fresh.length) { fresh.forEach(k => shortKeys.add(k)); draw(); }
-  // шаг 3: если и сокращение не влезает — уменьшаем шрифт только в этой клетке, буквы остаются полностью
-  // уменьшаем шрифт до 60% от обычного; если и так не влезает — название переносится на две строки, без многоточия
-  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => {
+  // шаг 3: обычные уроки всегда в одну строку. Если какое-то название не влезает, все обычные названия
+  // уменьшаются одинаково (общий коэффициент, но не меньше 60%). Перенос на две строки — только у замен и отмен.
+  const host = $('classes');
+  const plain = [...host.querySelectorAll('.c:not(.chg) > span[data-key]')];
+  plain.forEach(sp => { sp.style.fontSize = ''; });
+  let scale = 1;
+  plain.forEach(sp => { const have = sp.clientWidth - 1; if (sp.scrollWidth > have) scale = Math.min(scale, have / sp.scrollWidth); });
+  if (scale < 1) {
+    scale = Math.max(0.6, scale * 0.98);
+    plain.forEach(sp => { sp.style.fontSize = (parseFloat(getComputedStyle(sp).fontSize) * scale) + 'px'; });
+  }
+  host.querySelectorAll('.c.chg > span[data-key]').forEach(sp => {
     const base = parseFloat(getComputedStyle(sp).fontSize);
     let fs = base;
     const fits = () => sp.scrollWidth <= sp.clientWidth + 1 && sp.scrollHeight <= sp.clientHeight + 2;
