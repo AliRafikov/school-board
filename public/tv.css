@@ -5,7 +5,8 @@ body.tv { --bg:#e7e8eb; --panel:#fff; --stripe:#f3f3f5; --text:#16181f; --dim:#8
 body.tv.dark { --bg:#0f1116; --panel:#1b1e26; --stripe:#232733; --text:#e9ebf0; --dim:#8a90a0; --red:#ef6470; --red2:#f2787f; --red-bg:rgba(239,100,112,.16); --accent:#ef6470; }
 body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372; }
 .app { height:100vh; display:grid; grid-template-rows: 11vh 1fr 35vh; }
-.top { background:var(--panel); display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:3vw; padding:0 1.8vw; }
+.top { background:var(--panel); display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:0; padding:0 1.8vw; }
+.top > .now, .top > .wx { margin-right:3vw; }
 .brand { display:flex; align-items:center; gap:1vw; font-weight:800; font-size:2vw; color:var(--red); min-width:0; }
 .brand img { height:11vh; width:auto; object-fit:contain; }
 .now { text-align:right; line-height:1.1; }
