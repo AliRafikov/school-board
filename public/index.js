@@ -1,0 +1,34 @@
+let S = null, day = 0;
+const $ = id => document.getElementById(id);
+
+function render() {
+  if (!S) { $('day').textContent = 'Данные пока недоступны'; return; }
+  const cls = $('cls').value;
+  store.set('cls', cls);
+  $('tabs').innerHTML = DAYS.map((d, i) => `<button class="${i === day ? 'active' : ''}" data-d="${i}">${d}</button>`).join('');
+  const subs = S.substitutions.filter(x => x.classes.some(c => c.cls === cls) && x.date === schoolNow(S.tz).iso);
+  $('subs').innerHTML = subs.length ? `<div class="card"><h2>Замены на сегодня</h2>${subs.map(x => `<div class="subline"><b>${esc(x.lessons)} ур. · ${esc(x.subject)} · к.${esc(x.room)}</b><br><small>${esc(x.teacher)}${x.absent ? ', вместо ' + esc(x.absent) : ''} ${esc((x.classes.find(c => c.cls === cls) || {}).note || '')}</small></div>`).join('')}</div>` : '';
+  const bellOf = n => S.bells.find(b => b.n === n);
+  const lessons = (S.schedule[cls] || {})[day] || [];
+  $('day').innerHTML = `<h2>${DAYS_FULL[day]}, ${esc(cls)}</h2>` + (lessons.length ? lessons.map((l, i) => {
+    const b = bellOf(l.n);
+    return `<div class="vrow"><div class="time">${i + 1}<br>${b ? esc(b.start) : ''}</div>${lessonCell(l)}</div>`;
+  }).join('') : '<p class="dim">Уроков нет</p>');
+  $('bells').innerHTML = S.bells.map(b => `<tr class="${b.was ? 'changed' : ''}"><td>${esc(b.start)}–${esc(b.end)}</td><td class="dim">${esc(b.meal ? b.title + (b.label ? ' (' + b.label + ')' : '') : (b.label || ''))}</td><td>${b.was ? `<span class="was">было ${esc(b.was.start)}–${esc(b.was.end)}</span> <i class="badge" style="position:static">изм.</i>` : ''}</td></tr>`).join('');
+  $('upd').textContent = 'Обновлено: ' + new Date(S.updatedAt).toLocaleString('ru-RU');
+}
+
+async function load() {
+  const r = await loadState();
+  $('offline').hidden = !r.offline;
+  if (!r.state) return render();
+  const first = !S; S = r.state;
+  const keep = $('cls').value || store.get('cls');
+  $('cls').innerHTML = S.classes.map(c => `<option>${esc(c)}</option>`).join('');
+  if (S.classes.includes(keep)) $('cls').value = keep;
+  if (first) { const n = schoolNow(S.tz).day; day = n > 5 ? 0 : n; }
+  render();
+}
+$('cls').onchange = render;
+$('tabs').onclick = e => { const d = e.target.dataset.d; if (d != null) { day = +d; render(); } };
+load(); setInterval(load, 60000);

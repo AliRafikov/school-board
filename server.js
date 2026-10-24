@@ -43,7 +43,7 @@ function serveFile(req, res, file, cache) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404, SEC); return res.end('Not found'); }
     const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    const headers = { 'Content-Type': type, 'Cache-Control': cache, 'Accept-Ranges': 'bytes', ...SEC };
+    const headers = { 'Content-Type': type, 'Cache-Control': cache, 'Accept-Ranges': 'bytes', ...SEC, ...(path.extname(file) === '.html' ? { 'Content-Security-Policy': CSP } : {}) };
     const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range || ''); // Safari/tvOS запрашивает видео частями
     if (range) {
       const start = range[1] ? parseInt(range[1], 10) : 0;
@@ -56,8 +56,28 @@ function serveFile(req, res, file, cache) {
   });
 }
 
-const ip = req => (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+// Адрес клиента. За Caddy (локальный адрес) берём последнее значение X-Forwarded-For — его дописывает Caddy.
+// Первое значение задаёт сам клиент, поэтому его нельзя доверять.
+const ip = req => {
+  const sock = req.socket.remoteAddress || '';
+  if (sock === '127.0.0.1' || sock === '::1' || sock === '::ffff:127.0.0.1') {
+    const parts = String(req.headers['x-forwarded-for'] || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
+  return sock;
+};
 const isHttps = req => req.headers['x-forwarded-proto'] === 'https';
+const SCREEN_TTL = 14 * 864e5; // экран без связи 14 дней (и без имени) забываем
+// строгая политика для страниц: скрипты только со своего сайта, встроенных скриптов нет
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'self'";
+// ограничение частоты «экран на связи»: не больше 120 запросов в минуту с одного адреса (школа — много экранов за одним адресом)
+const pingHits = new Map();
+function pingAllowed(addr) {
+  if (pingHits.size > 5000) pingHits.clear();
+  const now = Date.now(), hits = (pingHits.get(addr) || []).filter(t => now - t < 60e3);
+  if (hits.length >= 120) { pingHits.set(addr, hits); return false; }
+  hits.push(now); pingHits.set(addr, hits); return true;
+}
 
 // ---------- загрузка медиа ----------
 function sniff(buf) {
@@ -105,13 +125,13 @@ async function adminApi(req, res, p, url, user) {
     const clearUntil = Number(getSetting('clear_until')) || 0;
     const shiftNow = getSetting('shift_date') === todayNow && Number(getSetting('shift_minutes')) > 0;
     return json(res, 200, {
-      mode: S.mode(), sync: S.status(),
+      mode: S.mode(), sync: S.status(), screen_theme: getSetting('theme') || 'auto',
       status: {
         urgent: urgentNow ? { title: urgentNow, source: getSetting('urgent_source') || '', since: Number(getSetting('urgent_since')) || 0 } : null,
         clear: clearUntil > now ? { title: getSetting('clear_title') || '', until: clearUntil } : null,
         shift: shiftNow ? { from: Number(getSetting('shift_from')), minutes: Number(getSetting('shift_minutes')) } : null,
         subs_today: db.prepare('SELECT COUNT(DISTINCT date || lessons || subject || cls) c FROM subs WHERE date = ?').get(todayNow).c,
-        screens_offline: db.prepare('SELECT id, name, last_seen FROM screens WHERE last_seen <= ? ORDER BY last_seen ASC').all(now - 3 * 60e3)
+        screens_offline: db.prepare('SELECT id, name, last_seen FROM screens WHERE last_seen <= ? AND last_seen > ? ORDER BY last_seen ASC').all(now - 3 * 60e3, now - SCREEN_TTL)
       },
       runs: db.prepare('SELECT * FROM sync_runs ORDER BY id DESC LIMIT 8').all(),
       counts: {
@@ -121,7 +141,7 @@ async function adminApi(req, res, p, url, user) {
         bells: db.prepare('SELECT COUNT(*) c FROM bells').get().c,
         subs: db.prepare('SELECT COUNT(DISTINCT date || lessons || subject || cls) c FROM subs WHERE date >= ?').get(S.shiftISO(S.todayISO(), -1)).c,
         screens: db.prepare('SELECT COUNT(*) c FROM screens WHERE last_seen > ?').get(now - 3 * 60e3).c,
-        screens_total: db.prepare('SELECT COUNT(*) c FROM screens').get().c
+        screens_total: db.prepare('SELECT COUNT(*) c FROM screens WHERE last_seen > ?').get(now - SCREEN_TTL).c
       },
       recent: db.prepare("SELECT * FROM audit WHERE action NOT IN ('login','login_failed','logout') ORDER BY id DESC LIMIT 8").all()
     });
@@ -303,10 +323,12 @@ async function adminApi(req, res, p, url, user) {
     }
   }
   if (p === '/api/admin/settings') {
-    if (!need('settings')) return;
+    const themeOnly = m === 'PUT' && !A.can(user, 'settings') && A.can(user, 'screens'); // завуч меняет только тему экрана
+    if (!themeOnly && !need('settings')) return;
     if (m === 'GET') return json(res, 200, allSettings());
     if (m === 'PUT') {
       const b = await readJSON(req), before = allSettings(), upd = {};
+      if (themeOnly && Object.keys(b).some(k => k !== 'theme')) return fail(res, 403, 'Недостаточно прав');
       if ('tz' in b) { try { new Intl.DateTimeFormat('en', { timeZone: String(b.tz) }); } catch { return fail(res, 400, 'Неизвестный часовой пояс'); } upd.tz = String(b.tz); }
       if ('change_ttl_hours' in b) upd.change_ttl_hours = clampInt(b.change_ttl_hours, 1, 168, 24);
       if ('board_seconds' in b) upd.board_seconds = clampInt(b.board_seconds, 10, 600, 45);
@@ -345,7 +367,8 @@ async function adminApi(req, res, p, url, user) {
     if (!need('users')) return;
     const id = Number(um[1]), target = db.prepare('SELECT * FROM users WHERE id=?').get(id);
     if (!target) return fail(res, 404, 'Пользователь не найден');
-    if (target.role === 'director' && user.role !== 'director') return fail(res, 403, 'Менять директора может только директор');
+    // директора меняет только он сам: иначе двое директоров могли бы отключить или перехватить друг друга
+    if (target.role === 'director' && target.id !== user.id) return fail(res, 403, 'Другого директора может менять только он сам');
     const b = await readJSON(req);
     const activeDirectors = () => db.prepare("SELECT COUNT(*) c FROM users WHERE role='director' AND active=1").get().c;
     let out = {};
@@ -354,6 +377,7 @@ async function adminApi(req, res, p, url, user) {
       if (b.role === 'director' && user.role !== 'director') return fail(res, 403, 'Назначить директора может только директор');
       if (target.role === 'director' && target.active && activeDirectors() <= 1) return fail(res, 400, 'Нельзя снять роль с единственного директора');
       db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role, id);
+      if (id !== user.id) db.prepare('DELETE FROM sessions WHERE user_id=?').run(id); // новая роль — новый вход
       audit({ user, action: 'user_role_changed', target: target.login, was: roleLabel(target.role), now: roleLabel(b.role) });
     }
     if ('name' in b && String(b.name).trim() && b.name !== target.name) { db.prepare('UPDATE users SET name=? WHERE id=?').run(String(b.name).trim(), id); audit({ user, action: 'user_renamed', target: target.login, was: target.name, now: b.name }); }
@@ -456,6 +480,8 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/ping' && req.method === 'POST') { // экран сообщает, что он жив
       const b = await readJSON(req); const id = String(b.id || '').replace(/[^\w-]/g, '').slice(0, 40);
       if (!id) return fail(res, 400, 'id');
+      if (!pingAllowed(ip(req))) return fail(res, 429, 'Слишком часто');
+      if (db.prepare('SELECT COUNT(*) c FROM screens').get().c >= 300 && !db.prepare('SELECT 1 FROM screens WHERE id=?').get(id)) return fail(res, 507, 'Слишком много экранов');
       const now = Date.now();
       db.prepare(`INSERT INTO screens(id,last_seen,ip,ua,version,first_seen) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen, ip=excluded.ip, ua=excluded.ua, version=excluded.version`)
         .run(id, now, ip(req), String(req.headers['user-agent'] || '').slice(0, 160), String(b.version || '').slice(0, 20), now);
@@ -483,6 +509,7 @@ const server = http.createServer(async (req, res) => {
         const pr = A.passwordProblem(String(b.new || '')); if (pr) return fail(res, 400, pr);
         if (b.new === b.old) return fail(res, 400, 'Новый пароль должен отличаться от старого');
         db.prepare('UPDATE users SET pass_hash=?, must_change=0 WHERE id=?').run(A.hashPassword(String(b.new)), user.id);
+        A.destroyOtherSessions(user.id, req); // остальные входы с паролем, который поменяли, закрываем
         audit({ user, action: 'password_changed', target: user.login });
         return json(res, 200, { ok: true });
       }
@@ -513,6 +540,9 @@ const server = http.createServer(async (req, res) => {
   }
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
   S.getState(); // прогреваем кэш расписания
-  setInterval(() => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()), 3600e3);
+  setInterval(() => {
+    db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+    db.prepare("DELETE FROM screens WHERE last_seen < ? AND (name IS NULL OR name = '')").run(Date.now() - SCREEN_TTL);
+  }, 3600e3);
   server.listen(PORT, HOST, () => console.log(`Панель: http://localhost:${PORT}/  (ТВ: /tv, админка: /admin)${sharp ? ', сжатие картинок включено' : ''}`));
 })();

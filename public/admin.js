@@ -141,8 +141,9 @@ async function viewOverview() {
   const t2 = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const canAnn = me.can.announcements;
   const offline = st.screens_offline.filter(x => x.id);
-  const scfg = me.can.settings ? await api('GET', '/api/admin/settings') : null;
-  const stheme = scfg ? (scfg.theme || 'auto') : null;
+  // тему экрана видят и меняют директор, IT и завуч (её значение приходит вместе с обзором)
+  const scfg = me.can.screens ? true : null;
+  const stheme = scfg ? (o.screen_theme || 'auto') : null;
   const plural = n => (n % 10 === 1 && n % 100 !== 11) ? 'экран' : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? 'экрана' : 'экранов';
   // главная плашка: тревога, отбой или спокойно. Одна кнопка по делу, без пунктов «нет»
   const hero = st.urgent
@@ -175,7 +176,7 @@ async function viewOverview() {
     ${scfg ? `<div class="card screen-theme"><div><h2>Тема экрана</h2><p class="muted small" style="margin:4px 0 0">«Авто» — светлая днём, ночью чёрная с временем и логотипом</p></div>
       <div class="seg seg-wide" id="sTheme">${[['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([v, l]) => `<button type="button" data-st="${v}" aria-pressed="${stheme === v}">${l}</button>`).join('')}</div></div>` : ''}
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px"><div><h2 style="margin:0">Так видит экран</h2><p class="muted small" style="margin:4px 0 0">Копия телевизора, обновляется вместе с ним</p></div><a class="btn sm" href="/tv" target="_blank" rel="noopener">Во весь экран</a></div>
-      <div class="tvframe" id="tvWrap"><iframe src="/tv" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
+      <div class="tvframe" id="tvWrap"><iframe src="/tv?preview=1" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
     <div class="card"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
     me.can.screens ? '<button class="btn primary" id="bRef">Обновить все экраны</button>' : '');
   const b = document.getElementById('bRef');
@@ -853,5 +854,13 @@ async function boot() {
   try { me = await api('GET', '/api/auth/me'); } catch { me = null; }
   const r = readHash(); view = r.v; sub = r.s;
   render();
+  // права и вход проверяем раз в минуту: если роль сменили или вход закрыли, страница обновится сама
+  setInterval(async () => {
+    if (!me) return;
+    try {
+      const n = await api('GET', '/api/auth/me');
+      if (JSON.stringify([n.role, n.must_change, n.can]) !== JSON.stringify([me.role, me.must_change, me.can])) { me = n; render(); }
+    } catch { /* нет связи: проверим в следующий раз */ }
+  }, 60e3);
 }
 boot();

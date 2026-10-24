@@ -332,7 +332,9 @@ function checkEpoch() {
 }
 
 const screenId = (() => { let id = store.get('screenId'); if (!id) { id = 's' + Math.random().toString(36).slice(2, 10); store.set('screenId', id); } return id; })();
-const ping = () => fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId, version: S ? S.version : '' }) }).catch(() => {});
+// предпросмотр в админке (во фрейме или с ?preview=1) — не экран, его не считаем
+const isPreview = window.top !== window.self || /[?&]preview\b/.test(location.search);
+const ping = () => isPreview ? Promise.resolve() : fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId, version: S ? S.version : '' }) }).catch(() => {});
 
 // ---------- Обновление данных ----------
 // Погода в шапке: обновляется раз в 15 минут, если данных нет — строка скрыта
