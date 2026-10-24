@@ -314,6 +314,7 @@ async function mountMedia() {
 
 // ---------- экраны ----------
 async function viewScreens() {
+  const prefill = pendingPair; pendingPair = ''; // код из QR: вставляем в форму один раз
   const rows = await api('GET', '/api/admin/screens');
   const table = rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Название</th><th>Состояние</th><th>Последний сигнал</th><th>Версия данных</th><th>Устройство</th><th></th></tr></thead><tbody>
     ${rows.map(r => { const on = Date.now() - r.last_seen < 180000; return `<tr><td><input type="text" value="${esc(r.name || '')}" placeholder="${esc(r.id)}" data-id="${esc(r.id)}" style="max-width:220px"></td>
@@ -323,7 +324,7 @@ async function viewScreens() {
   shell('Экраны', `
     <div class="card"><h2>Привязать экран</h2>
       <p class="muted small" style="margin:4px 0 14px">На телевизоре откройте табло: на нём появится код из 6 цифр. Введите его здесь. Код действует 10 минут.</p>
-      <form class="row" id="pf"><label class="f">Код с экрана<input type="text" id="pc" inputmode="numeric" autocomplete="off" maxlength="7" required placeholder="123 456" style="max-width:200px;font-size:20px;letter-spacing:.12em"></label>
+      <form class="row" id="pf"><label class="f">Код с экрана<input type="text" id="pc" inputmode="numeric" autocomplete="off" maxlength="7" required placeholder="123 456" value="${esc(prefill)}" style="max-width:200px;font-size:20px;letter-spacing:.12em"></label>
         <label class="f">Название<input type="text" id="pn" maxlength="60" placeholder="Холл, 1 этаж" style="max-width:260px"></label>
         <button class="btn primary" type="submit">Привязать экран</button></form><div id="pm" style="margin-top:10px"></div></div>
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Привязанные экраны</h2></div>
@@ -858,6 +859,10 @@ function readHash() {
 async function render() {
   if (!me) return renderLogin();
   if (me.must_change) { const p = renderPasswordForm(true); $app.innerHTML = `<div class="login"><div style="width:100%;max-width:440px"><h1 style="margin-bottom:14px">Новый пароль</h1>${p.form}</div></div>`; return p.wire(); }
+  if (pendingPair) {
+    if (!me.can.screens) { const code = pendingPair; pendingPair = ''; return shell('Привязка экрана', `<div class="card"><h2>Привязать экран нельзя</h2><p class="muted" style="margin:6px 0 0">Привязывать экраны может директор, IT-администратор или завуч. Войдите под своей учётной записью или попросите коллегу с доступом. Код на экране: ${esc(code)}</p></div>`); }
+    view = 'system'; sub = 'screens';
+  }
   const allowed = NAV.filter(n => n[2](me)).map(n => n[0]);
   if (!allowed.includes(view)) view = 'overview';
   try {
@@ -871,6 +876,12 @@ async function render() {
 }
 window.addEventListener('hashchange', () => { const r = readHash(); view = r.v; sub = r.s; render(); });
 
+// ссылка из QR на табло: /admin?pair=КОД — запоминаем код и открываем привязку после входа
+let pendingPair = '';
+{
+  const qp = new URLSearchParams(location.search).get('pair');
+  if (qp) { pendingPair = qp.replace(/\D/g, '').slice(0, 6); history.replaceState(null, '', '/admin'); }
+}
 async function boot() {
   try { const st = await (await fetch('/api/state')).json(); brand = { logo: st.logo || '', school: st.schoolName || '' }; } catch { /* нет связи */ }
   try { me = await api('GET', '/api/auth/me'); } catch { me = null; }

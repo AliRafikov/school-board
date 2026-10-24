@@ -79,6 +79,8 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 #pair .pc { font-size:11vw; font-weight:800; letter-spacing:.06em; line-height:1; font-variant-numeric:tabular-nums; color:var(--red); }
 #pair p { margin:0; font-size:1.8vw; color:var(--dim); max-width:72vw; }
 #pair p.ph { font-size:1.3vw; }
+#pair #pairQr svg { width:26vh; height:26vh; display:block; background:#fff; border-radius:1.2vw; padding:1vh; box-sizing:content-box; }
+#pair #pairQr:empty { display:none; }
 .demoflag { position:fixed; left:50%; top:.6vh; transform:translateX(-50%); z-index:8; background:#db4755; color:#fff; font-weight:800; font-size:1.1vw; padding:.3vw 1.2vw; border-radius:2vw; }
 .demoflag[hidden] { display:none; }
 .empty{display:flex;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;color:#666;font-size:2.2vh}

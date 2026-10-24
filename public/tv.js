@@ -354,7 +354,17 @@ let pairTimer = null;
 async function requestCode() {
   try {
     const j = await (await fetch('/api/pair/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: screenId }) })).json();
-    if (j.code) $('pairCode').textContent = j.code.slice(0, 3) + ' ' + j.code.slice(3);
+    if (j.code) {
+      $('pairCode').textContent = j.code.slice(0, 3) + ' ' + j.code.slice(3);
+      // QR ведёт в админку с кодом: телефон откроет «Привязать экран» с уже введённым кодом
+      if (window.QRCode) {
+        const qr = new window.QRCode(-1, 0); qr.addData(location.origin + '/admin?pair=' + j.code); qr.make();
+        const n = qr.getModuleCount(), m = 4; let d = '';
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+        const size = n + 2 * m;
+        $('pairQr').innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><path d="${d}" fill="#16181f"/></svg>`;
+      }
+    }
   } catch { /* нет связи — повторим */ }
 }
 function showPairing() {

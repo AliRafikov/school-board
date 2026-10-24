@@ -44,9 +44,10 @@
 <!-- Ночной экран: только время и логотип -->
 <div id="night" hidden><div class="ntime" id="nightClock">--:--</div><img id="nightLogo" alt="" hidden></div>
 <!-- Привязка: экран без доступа показывает код для админки -->
-<div id="pair" hidden><h2>Привязка экрана</h2><div class="pc" id="pairCode">------</div><p>В админке откройте «Экраны» и нажмите «Привязать экран». Введите этот код.</p><p class="ph" id="pairHost"></p></div>
+<div id="pair" hidden><h2>Привязка экрана</h2><div class="pc" id="pairCode">------</div><div id="pairQr" aria-label="QR-код для привязки"></div><p>Наведите камеру телефона на QR-код или введите код в админке: «Экраны» → «Привязать экран».</p><p class="ph" id="pairHost"></p></div>
 <div class="offline" id="offline" hidden>Нет связи с сервером. Показано последнее сохранённое расписание, оно обновится само.</div>
 <script src="/common.js"></script>
+<script src="/vendor/qrcode.js"></script>
 <script src="/tv.js"></script>
 </body>
 </html>
