@@ -6,6 +6,26 @@ const ago = t => { if (!t) return 'никогда'; const s = Math.round((Date.n
 
 let me = null, view = 'overview', sub = '', brand = { logo: '', school: '' };
 
+// тема админки: по умолчанию как в системе; выбор запоминается в этом браузере
+const THEMES = [['light', 'Светлая'], ['dark', 'Тёмная'], ['auto', 'Системная']];
+const getTheme = () => { try { return localStorage.getItem('sbAdminTheme') || 'auto'; } catch { return 'auto'; } };
+function setTheme(t) {
+  try { localStorage.setItem('sbAdminTheme', t); } catch { /* режим без хранилища */ }
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t;
+}
+setTheme(getTheme());
+
+// значки разделов (в одном стиле, цвет берётся от текста)
+const svgIc = d => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICONS = {
+  overview: svgIc('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'),
+  schedule: svgIc('<rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9.5h18M8 2.5v3M16 2.5v3"/>'),
+  calls: svgIc('<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
+  subs: svgIc('<path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/>'),
+  ann: svgIc('<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>'),
+  system: svgIc('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/>'),
+};
+
 async function api(method, path, body, headers = {}) {
   const h = { 'X-Requested-With': 'sb', ...headers };
   let payload;
@@ -70,7 +90,7 @@ function renderPasswordForm(forced) {
 
 // ---------- каркас ----------
 const NAV = [['overview', 'Обзор', () => true], ['schedule', 'Расписание', m => m.can.schedule], ['calls', 'Звонки', m => m.can.schedule], ['subs', 'Замены', m => m.can.subs],
-  ['ann', 'Объявления и постеры', m => m.can.announcements || m.can.media], ['system', 'Система', () => true]];
+  ['ann', 'Объявления', m => m.can.announcements || m.can.media], ['system', 'Система', () => true]];
 // разделы внутри «Система»: видны по правам роли
 const SYS = [['screens', 'Экраны', m => m.can.screens, () => viewScreens()], ['users', 'Пользователи', m => m.can.users, () => viewUsers()],
   ['settings', 'Настройки', m => m.can.settings, () => viewSettings()], ['audit', 'Журнал', m => m.can.audit, () => viewAudit()],
@@ -93,18 +113,24 @@ function shell(title, bodyHtml, actionsHtml = '') {
   const sysNav = view === 'system' ? systemTabs() : '';
   $app.innerHTML = `<div class="shell"><aside class="side">
     <div class="logo-row">${brand.logo ? `<img src="${esc(brand.logo)}" alt="">` : ''}<span>${esc(brand.school)}</span></div>
-    <nav class="nav" aria-label="Разделы">${NAV.filter(n => n[2](me)).map(n => `<a href="#${n[0]}" ${n[0] === view ? 'aria-current="page"' : ''}>${n[1]}</a>`).join('')}</nav>
+    <nav class="nav" aria-label="Разделы">${NAV.filter(n => n[2](me)).map(n => `<a href="#${n[0]}" ${n[0] === view ? 'aria-current="page"' : ''}>${ICONS[n[0]] || ''}<span>${n[1]}</span></a>`).join('')}</nav>
     <div class="me" id="meBox">
       <button class="me-btn" id="meBtn" type="button" aria-haspopup="menu" aria-expanded="false">
         <span><b>${esc(me.name)}</b><span class="muted small">${esc(me.role_label)}</span></span><span class="me-caret" aria-hidden="true">▴</span></button>
       <div class="me-menu" id="meMenu" role="menu" hidden>
         <a role="menuitem" href="#system/profile">Мой профиль и пароль</a>
+        <div class="seg-label" id="themeLbl">Тема</div>
+        <div class="seg" role="group" aria-labelledby="themeLbl">${THEMES.map(([v, l]) => `<button type="button" data-theme-set="${v}" aria-pressed="${getTheme() === v}">${l}</button>`).join('')}</div>
         <button role="menuitem" type="button" id="lo">Выйти</button>
       </div>
     </div>
   </aside><main class="main"><header><h1>${esc(title)}</h1><div class="row">${actionsHtml}</div></header><div id="view">${sysNav}${bodyHtml}</div></main></div>`;
   const menu = document.getElementById('meMenu'), btn = document.getElementById('meBtn');
   btn.onclick = e => { e.stopPropagation(); setMeMenu(menu.hidden); };
+  menu.querySelectorAll('[data-theme-set]').forEach(b => b.onclick = () => {
+    setTheme(b.dataset.themeSet);
+    menu.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
   document.getElementById('lo').onclick = async () => { try { await api('POST', '/api/auth/logout'); } catch {} me = null; render(); };
 }
 
@@ -114,45 +140,51 @@ async function viewOverview() {
   const s = o.sync, st = o.status;
   const t2 = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   const canAnn = me.can.announcements;
-  // плашка «сейчас»: тревога, отбой, сдвиг, замены, экраны
   const offline = st.screens_offline.filter(x => x.id);
-  const alarmBtn = !canAnn ? '' : st.urgent
-    ? `<button class="btn danger" id="oAlarmOff" type="button">Отправить отбой</button>`
-    : st.clear ? `<button class="btn" id="oClearHide" type="button">Скрыть отбой</button>` : '';
-  const status = `
-    <div class="card" style="margin-bottom:16px"><h2>Сейчас на экранах</h2>
-      <div class="grid" style="margin-top:8px">
-        <div class="stat"><div class="l">Срочное сообщение</div><div class="v" style="font-size:18px">${st.urgent ? `<span class="pill bad">идёт</span> ${esc(st.urgent.title)}` : 'нет'}</div>${st.urgent && st.urgent.since ? `<div class="muted small">с ${t2(st.urgent.since)}</div>` : ''}</div>
-        <div class="stat"><div class="l">Отбой</div><div class="v" style="font-size:18px">${st.clear ? `показан до ${t2(st.clear.until)}` : 'нет'}</div></div>
-        <div class="stat"><div class="l">Сдвиг звонков</div><div class="v" style="font-size:18px">${st.shift ? `на ${st.shift.minutes} мин с ${st.shift.from} урока` : 'нет'}</div>${me.can.schedule ? '<a class="small" href="#calls">Открыть «Звонки»</a>' : ''}</div>
-        <div class="stat"><div class="l">Замены на сегодня</div><div class="v" style="font-size:18px">${st.subs_today}</div>${me.can.subs ? '<a class="small" href="#subs">Открыть «Замены»</a>' : ''}</div>
-        <div class="stat"><div class="l">Экраны на связи</div><div class="v" style="font-size:18px">${o.counts.screens} из ${o.counts.screens_total}</div></div>
-      </div>
-      ${alarmBtn ? `<div class="row" style="margin-top:12px">${alarmBtn}</div>` : ''}
-    </div>`;
+  const scfg = me.can.settings ? await api('GET', '/api/admin/settings') : null;
+  const stheme = scfg ? (scfg.theme || 'auto') : null;
+  const plural = n => (n % 10 === 1 && n % 100 !== 11) ? 'экран' : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? 'экрана' : 'экранов';
+  // главная плашка: тревога, отбой или спокойно. Одна кнопка по делу, без пунктов «нет»
+  const hero = st.urgent
+    ? `<section class="hero hero-alarm"><div><h2 class="hero-t">${esc(st.urgent.title)}</h2><p class="hero-s">${st.urgent.source ? esc(st.urgent.source) + ' · ' : ''}с ${t2(st.urgent.since)}</p></div>${canAnn ? '<button class="btn hero-btn" id="oAlarmOff" type="button">Отправить отбой</button>' : ''}</section>`
+    : st.clear
+      ? `<section class="hero hero-ok"><div><h2 class="hero-t">Отбой на экранах</h2><p class="hero-s">Зелёная плашка до ${t2(st.clear.until)}</p></div>${canAnn ? '<button class="btn hero-btn" id="oClearHide" type="button">Скрыть отбой</button>' : ''}</section>`
+      : `<section class="hero"><div><h2 class="hero-t">Всё в порядке</h2><p class="hero-s">Экраны показывают расписание</p></div>${canAnn ? '<a class="btn primary" href="#ann">Срочное сообщение</a>' : ''}</section>`;
+  // что сейчас меняет расписание: показываем только то, что действует
+  const live = [];
+  if (st.shift) live.push(`<a class="live-i" href="${me.can.schedule ? '#calls' : '#overview'}"><span>Сдвиг звонков</span><b>на ${st.shift.minutes} мин с ${st.shift.from} урока</b></a>`);
+  if (st.subs_today) live.push(`<a class="live-i" href="${me.can.subs ? '#subs' : '#overview'}"><span>Замены на сегодня</span><b>${st.subs_today}</b></a>`);
+  if (offline.length) {
+    const named = offline.filter(x => x.name).map(x => x.name);
+    const txt = named.length === offline.length ? named.join(', ') : `${offline.length} ${plural(offline.length)}`;
+    live.push(`<a class="live-i live-bad" href="#system/screens"><span>Не на связи</span><b>${esc(txt)}</b></a>`);
+  }
+  const status = `${hero}${live.length ? `<div class="live">${live.join('')}</div>` : ''}`;
   const attention = [];
   if (o.counts.lessons === 0) attention.push('Расписание ещё не загружено. Откройте раздел «Расписание» и загрузите файл Excel.');
-  if (offline.length) attention.push('Не на связи: ' + offline.map(x => `«${x.name || x.id}» (с ${t2(x.last_seen)})`).join(', '));
   if (st.urgent && st.urgent.since && Date.now() - st.urgent.since > 2 * 3600e3) attention.push(`Срочное сообщение висит уже больше двух часов. Проверьте, актуально ли оно.`);
   shell('Обзор', `
     ${attention.map(a => `<div class="msg warn" style="margin-bottom:12px">${esc(a)}</div>`).join('')}
-    ${s.lastInfo ? `<div class="msg" style="margin-bottom:16px;font-size:14px">В базе: ${esc(s.lastInfo)}</div>` : ''}
     ${status}
-    <div class="card" style="margin-bottom:16px"><div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Так видит экран</h2><a class="btn sm" href="/tv" target="_blank" rel="noopener">Открыть во весь экран</a></div>
-      <p class="muted small" style="margin:6px 0 10px">Копия экрана для телевизора. Обновляется вместе с ним.</p>
-      <div class="tvframe" id="tvWrap"><iframe src="/tv" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
     <div class="grid">
+      <div class="stat"><div class="v">${o.counts.screens} <span class="muted small">из ${o.counts.screens_total}</span></div><div class="l">экранов на связи</div></div>
       <div class="stat"><div class="v">${o.counts.lessons}</div><div class="l">уроков в расписании</div></div>
       <div class="stat"><div class="v">${o.counts.bells}</div><div class="l">звонков и перемен</div></div>
       <div class="stat"><div class="v">${o.counts.media}</div><div class="l">файлов в показе</div></div>
-      <div class="stat"><div class="v">${o.counts.users}</div><div class="l">пользователей</div></div>
     </div>
-    <div class="card" style="margin-top:16px"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
+    ${scfg ? `<div class="card screen-theme"><div><h2>Тема экрана</h2><p class="muted small" style="margin:4px 0 0">«Авто» — светлая днём, ночью чёрная с временем и логотипом</p></div>
+      <div class="seg seg-wide" id="sTheme">${[['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([v, l]) => `<button type="button" data-st="${v}" aria-pressed="${stheme === v}">${l}</button>`).join('')}</div></div>` : ''}
+    <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px"><div><h2 style="margin:0">Так видит экран</h2><p class="muted small" style="margin:4px 0 0">Копия телевизора, обновляется вместе с ним</p></div><a class="btn sm" href="/tv" target="_blank" rel="noopener">Во весь экран</a></div>
+      <div class="tvframe" id="tvWrap"><iframe src="/tv" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
+    <div class="card"><h2>Последние действия</h2>${auditTable(o.recent)}</div>`,
     me.can.screens ? '<button class="btn primary" id="bRef">Обновить все экраны</button>' : '');
   const b = document.getElementById('bRef');
   if (b) b.onclick = async () => { b.disabled = true; try { await api('POST', '/api/admin/refresh-screens'); b.textContent = 'Отправлено'; setTimeout(render, 900); } catch (e) { alert(e.message); b.disabled = false; } };
   const off = document.getElementById('oAlarmOff');
   if (off) off.onclick = async () => { if (!confirm('Отправить отбой на все экраны?')) return; try { await api('PUT', '/api/admin/urgent', { title: '' }); render(); } catch (e) { alert(e.message); } };
+  document.querySelectorAll('#sTheme [data-st]').forEach(b => b.onclick = async () => {
+    try { await api('PUT', '/api/admin/settings', { theme: b.dataset.st }); render(); } catch (e) { alert(e.message); }
+  });
   const hide = document.getElementById('oClearHide');
   if (hide) hide.onclick = async () => { try { await api('PUT', '/api/admin/urgent', { hide_clear: true }); render(); } catch (e) { alert(e.message); } };
   // живая миниатюра экрана: страница 1920×1080 уменьшается под ширину карточки
@@ -439,7 +471,17 @@ async function viewSettings() {
   };
 }
 
-function viewProfile() { const p = renderPasswordForm(false); shell('Мой профиль', p.form); p.wire(); }
+function viewProfile() {
+  const p = renderPasswordForm(false);
+  const cur = getTheme();
+  shell('Мой профиль', `<div class="card screen-theme"><div><h2>Тема админки</h2><p class="muted small" style="margin:4px 0 0">Запоминается на этом устройстве. «Системная» — как настроено на телефоне или компьютере</p></div>
+    <div class="seg seg-wide" id="pTheme">${THEMES.map(([v, l]) => `<button type="button" data-pt="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div></div>` + p.form);
+  document.querySelectorAll('#pTheme [data-pt]').forEach(b => b.onclick = () => {
+    setTheme(b.dataset.pt);
+    document.querySelectorAll('#pTheme [data-pt]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
+  p.wire();
+}
 
 // ---------- расписание: большой файл и звонки на даты ----------
 const DAY_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
