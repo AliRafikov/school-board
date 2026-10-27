@@ -130,6 +130,10 @@ class Client {
   // воскресенье — выходной: ни замена, ни изменение звонка на него не ставятся (2026-11-01 — воскресенье)
   r = await d.req('POST', '/api/admin/subs', { date: '2026-11-01', lessons: '1', classes: '8А', subject: 'Химия', room: '110' });
   ok(r.s === 400, 'замена на воскресенье отклонена');
+  r = await d.req('POST', '/api/admin/subs', { date: '2026-12-03', lessons: '', classes: '8А', subject: 'Химия', room: '110' });
+  ok(r.s === 400, 'замена без урока отклонена');
+  r = await d.req('POST', '/api/admin/subs', { date: '', lessons: '2', classes: '8А', subject: 'Химия', room: '110' });
+  ok(r.s === 400, 'замена без даты отклонена');
   r = await d.req('GET', '/api/admin/schedule'); const anyBell = r.j.bells[0];
   r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: anyBell.id, date_from: '2026-11-01', date_to: '2026-11-01', cancelled: true });
   ok(r.s === 400, 'изменение звонка на воскресенье отклонено');

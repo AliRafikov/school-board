@@ -581,9 +581,9 @@ async function viewSubs() {
       <div id="dayMsg" style="margin-top:8px"></div></div>
     <div class="card"><h2>Одна замена вручную</h2>
       <form class="row" id="sf2">
-        <label class="f">Дата<input type="date" id="sd" required></label>
-        <label class="f">Уроки<input type="text" id="sl" placeholder="3 или 1-6" maxlength="20" style="width:110px"></label>
-        <label class="f" style="flex:1;min-width:200px">Классы<input type="text" id="sc" placeholder="8А, 8Б, 5Б" required></label>
+        <label class="f">Дата *<input type="date" id="sd" required></label>
+        <label class="f">Урок *<input type="text" id="sl" placeholder="3 или 1-6" maxlength="20" style="width:110px" required></label>
+        <label class="f" style="flex:1;min-width:200px">Классы *<input type="text" id="sc" placeholder="8А, 8Б, 5Б" required></label>
         <label class="f" style="flex:1;min-width:200px">Предмет (если меняется)<input type="text" id="ss" placeholder="пусто — как в расписании" maxlength="120"></label>
         <label class="f">Кабинет<input type="text" id="sr" maxlength="40" style="width:110px"></label>
         <label class="f" style="flex:1;min-width:180px">Учитель<input type="text" id="st" maxlength="80"></label>
