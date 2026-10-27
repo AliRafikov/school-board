@@ -18,7 +18,6 @@ function tick() {
   lastIso = now.iso;
   slot = currentSlot(S.bells, now);
   const st = staticNow(), nt = nightNow();
-  if (nt) $('nightClock').textContent = `${pad(now.h)}:${pad(now.m)}`;
   if (st !== lastStatic || nt !== lastNight) { lastStatic = st; lastNight = nt; applyTheme(); renderAll(); showCenter(); }
   const L = { lesson: 'Идёт урок · до звонка', break: 'Перемена · до звонка', before: 'До начала уроков', after: 'Уроки закончились', off: 'Выходной' }[slot.phase];
   $('nowLabel').textContent = L;

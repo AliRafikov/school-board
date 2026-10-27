@@ -97,10 +97,10 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 .wx { font-size:1.35vw; font-weight:700; color:var(--dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .wx[hidden] { display:none; }
 /* ночной экран: только время и логотип */
-#night { position:fixed; inset:0; z-index:30; background:#000; color:#c9ccd4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5vh; }
+/* ночной экран: шапка остаётся (время, дата, погода), под ней на весь экран — логотип лицея */
+#night { position:fixed; top:11vh; left:0; right:0; bottom:0; z-index:30; background:var(--bg); display:flex; align-items:center; justify-content:center; }
 #night[hidden] { display:none; }
-#night .ntime { font-size:20vw; font-weight:300; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
-#night img { height:26vh; width:auto; object-fit:contain; opacity:.9; }
+#night img { height:55vh; width:auto; max-width:80vw; object-fit:contain; opacity:.95; }
 body.tv.night { cursor:none; }
 
 /* срочное сообщение: закрывает основную часть экрана, шапка с логотипом и временем остаётся */
