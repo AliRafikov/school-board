@@ -1,5 +1,5 @@
 // Service Worker: оболочка и медиа из кэша (первая отрисовка < 2 с, работа без интернета).
-const V = 'sb-v15';
+const V = 'sb-v20';
 const SHELL = ['/', '/tv', '/index.html', '/tv.html', '/style.css', '/tv.css', '/common.js', '/tv.js', '/fonts/sb-sans-400.ttf', '/fonts/sb-sans-700.ttf'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

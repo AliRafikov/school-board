@@ -7,7 +7,7 @@ function render() {
   store.set('cls', cls);
   $('tabs').innerHTML = DAYS.map((d, i) => `<button class="${i === day ? 'active' : ''}" data-d="${i}">${d}</button>`).join('');
   const subs = S.substitutions.filter(x => x.classes.some(c => c.cls === cls) && x.date === schoolNow(S.tz).iso);
-  $('subs').innerHTML = subs.length ? `<div class="card"><h2>Замены на сегодня</h2>${subs.map(x => `<div class="subline"><b>${esc(x.lessons)} ур. · ${esc(x.subject)} · к.${esc(x.room)}</b><br><small>${esc(x.teacher)}${x.absent ? ', вместо ' + esc(x.absent) : ''} ${esc((x.classes.find(c => c.cls === cls) || {}).note || '')}</small></div>`).join('')}</div>` : '';
+  $('subs').innerHTML = subs.length ? `<div class="card"><h2>Замены на сегодня</h2>${subs.map(x => `<div class="subline"><b>${esc(x.lessons)} ур. · ${esc(x.subject)} · к.${esc(x.room)}</b><br><small>${esc(x.teacher)} ${esc((x.classes.find(c => c.cls === cls) || {}).note || '')}</small></div>`).join('')}</div>` : '';
   const bellOf = n => S.bells.find(b => b.n === n);
   const lessons = (S.schedule[cls] || {})[day] || [];
   $('day').innerHTML = `<h2>${DAYS_FULL[day]}, ${esc(cls)}</h2>` + (lessons.length ? lessons.map((l, i) => {

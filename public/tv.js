@@ -98,7 +98,9 @@ function renderClasses() {
   clearTimeout(clsTimer);
   // шрифт грузится с задержкой: замер до загрузки даёт неверную ширину, поэтому повторяем после неё
   if (!fontsChecked && document.fonts) { fontsChecked = true; document.fonts.ready.then(() => renderClasses()); }
-  const now = schoolNow(S.tz), day = now.day > 5 ? 0 : now.day; // в воскресенье показываем понедельник
+  const now = schoolNow(S.tz), day = now.day;
+  // в воскресенье уроков нет: расписание понедельника на выходной не показываем
+  if (now.day > 5) { clsPage = 0; $('classes').innerHTML = '<div class="empty">Выходной</div>'; return; }
   const list = S.classes, MAXC = 8;
   if (!list.length) { $('classes').innerHTML = '<div class="empty">Расписание пока не загружено. Его заполняет администратор в панели.</div>'; return; }
   const pagesN = Math.ceil(list.length / MAXC), per = Math.ceil(list.length / pagesN), pg = clsPage % pagesN;
@@ -286,19 +288,23 @@ async function runShow() {
 // Центральный блок: картинки, ролики и текст с местом «центр» сменяют друг друга
 const cl = [$('cA'), $('cB')];
 let cFront = 0, cIdx = 0, cTimer = null, bIdx = 0, bTimer = null;
+// номер текущего показа: если за время загрузки постера запустили новый показ, старый не трогает слой
+let centerSeq = 0;
 async function showCenter() {
   clearTimeout(cTimer);
+  const seq = ++centerSeq;
   if (nightNow()) { cl.forEach(l => l.classList.remove('on')); return; }
   // постеры центра идут и на уроках (в статичном режиме тоже); логотип — только когда постеров нет
   const list = weighted(S.carousel.filter(i => i.place === 'center' && eligible(i)));
-  $('center').classList.toggle('hasc', list.length > 0);
-  if (!list.length) { cl.forEach(l => l.classList.remove('on')); cTimer = setTimeout(showCenter, 5000); return; }
+  // логотип прячем только когда постер уже показан, а не пока он грузится (иначе видна пустая рамка)
+  if (!list.length) { $('center').classList.remove('hasc'); cl.forEach(l => l.classList.remove('on')); cTimer = setTimeout(showCenter, 5000); return; }
   const item = list[cIdx++ % list.length], back = cl[1 - cFront];
   let ok = true;
   if (item.kind === 'text') { back.innerHTML = `<div class="ctext">${esc(item.title)}</div>`; }
-  else { const el = await build(item, back); ok = !!el; if (el && item.kind === 'video') el.play().catch(() => {}); }
+  else { const el = await build(item, back); if (seq !== centerSeq) return; ok = !!el; if (el && item.kind === 'video') el.play().catch(() => {}); }
   if (!ok) { cTimer = setTimeout(showCenter, 3000); return; }
   back.classList.add('on'); cl[cFront].classList.remove('on');
+  $('center').classList.add('hasc');
   const old = cl[cFront].querySelector('video'); if (old) setTimeout(() => old.pause(), 900);
   cFront = 1 - cFront;
   cTimer = setTimeout(showCenter, Math.max(3, item.duration || 10) * 1000);

@@ -29,7 +29,7 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 
 .banners { display:grid; grid-template-columns:1fr; gap:1.2vh; align-content:center; justify-items:center; }
 .banners[hidden] { display:none; }
-.banners img, .banners video { width:100%; max-height:24vh; aspect-ratio:1/1; object-fit:contain; background:var(--panel); border-radius:1.2vw; box-shadow:0 .2vw .8vw rgba(0,0,0,.15); display:block; }
+.banners img, .banners video { width:min(100%, 24vh); aspect-ratio:1/1; object-fit:contain; background:var(--panel); border-radius:1.2vw; box-shadow:0 .2vw .8vw rgba(0,0,0,.15); display:block; }
 
 .center { position:relative; height:49vh; aspect-ratio:16/9; align-self:center; justify-self:center; border-radius:1.8vw; overflow:hidden; background:var(--panel); box-shadow:0 .2vw .8vw rgba(0,0,0,.08); }
 .center .cl { background:var(--panel); }

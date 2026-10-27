@@ -97,6 +97,11 @@ const stateObj = () => {
   const logo = ['logo.svg', 'logo.png'].find(f => fs.existsSync(path.join(PUBLIC, 'brand', f)));
   return { ...s, logo: logo ? '/brand/' + logo : '', logoDark: fs.existsSync(path.join(PUBLIC, 'brand', 'logo-dark.png')) ? '/brand/logo-dark.png' : '' };
 };
+// публичная страница «/»: без фамилии учителя, которого заменили (это данные о здоровье/отсутствии сотрудника)
+const publicStateObj = () => {
+  const s = stateObj();
+  return { ...s, substitutions: s.substitutions.map(({ absent, ...x }) => x) };
+};
 
 // ---------- загрузка медиа ----------
 function sniff(buf) {
@@ -355,7 +360,11 @@ async function adminApi(req, res, p, url, user) {
         S.bump(); return json(res, 200, { ok: true, active: false });
       }
       let item;
-      if (b.preset) { item = URGENT_PRESETS.find(x => x.id === String(b.preset)); if (!item) return fail(res, 400, 'Неизвестный вариант'); }
+      if (b.preset) {
+        item = URGENT_PRESETS.find(x => x.id === String(b.preset)); if (!item) return fail(res, 400, 'Неизвестный вариант');
+        // готовые тревоги — только после двойного подтверждения в админке (флаг confirmed = второй шаг)
+        if (b.confirmed !== true) return fail(res, 400, 'Нужно второе подтверждение отправки');
+      }
       else item = { title: String(b.title).trim().slice(0, 120), source: String(b.source || '').trim().slice(0, 80), note: String(b.note || '').trim().slice(0, 200) };
       setSetting('urgent_end', item.end || '');
       const since = Date.now();
@@ -540,7 +549,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, stateObj());
     }
     // публичная страница расписания «/» — прежние данные без привязки
-    if (p === '/api/public/state') return json(res, 200, stateObj());
+    if (p === '/api/public/state') return json(res, 200, publicStateObj());
     if (p === '/api/health') return json(res, 200, { ok: true, version: S.getState().version });
     if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (p === '/api/ping' && req.method === 'POST') { // привязанный экран сообщает, что он жив; без привязки не считается

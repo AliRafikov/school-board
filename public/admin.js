@@ -807,10 +807,12 @@ async function viewAnn() {
     try { await api('PUT', '/api/admin/urgent', body); msg(um2, 'Сообщение отправлено на экраны', 'ok'); setTimeout(render, 600); }
     catch (er) { msg(um2, er.message); }
   };
+  // готовые тревоги: два отдельных подтверждения (первое — что показать, второе — что это уйдёт на все экраны прямо сейчас)
   document.querySelectorAll('button[data-preset]').forEach(btn => btn.onclick = () => {
     const title = btn.textContent.trim();
-    if (!confirm(`Показать на всех экранах: «${title}»?`)) return;
-    sendUrgent({ preset: btn.dataset.preset });
+    if (!confirm(`Шаг 1 из 2. Показать на всех экранах: «${title}»?`)) return;
+    if (!confirm(`Шаг 2 из 2. Это сообщение появится на всех экранах СРАЗУ и будет висеть, пока вы не отправите отбой. Точно отправить «${title}»?`)) return;
+    sendUrgent({ preset: btn.dataset.preset, confirmed: true });
   });
   document.getElementById('uOn').onclick = () => {
     const title = document.getElementById('ut').value.trim();

@@ -111,6 +111,15 @@ class Client {
     ok(r.j.counts.meals >= 1, 'завтрак/обед найдены в звонках');
     r = await d.req('POST', '/api/admin/schedule/import/commit', { token: r.j.token, mark: true }); ok(r.s === 200 && r.j.ok, 'расписание записано после подтверждения');
     r = await d.req('POST', '/api/admin/schedule/import/commit', { token: 'nope', mark: false }); ok(r.s === 400, 'повторное подтверждение по старому токену отклонено');
+    // исключение звонка на дату переживает повторный импорт того же файла
+    r = await d.req('GET', '/api/admin/schedule'); const lesson = r.j.bells.find(b => !b.meal);
+    r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: lesson.id, date_from: '2026-12-01', date_to: '2026-12-01', cancelled: true });
+    ok(r.s === 200 || r.s === 201, 'исключение звонка добавлено');
+    r = await d.req('POST', '/api/admin/schedule/import', fs.readFileSync(XLSX), { 'Content-Type': 'application/octet-stream' });
+    r = await d.req('POST', '/api/admin/schedule/import/commit', { token: r.j.token, mark: false });
+    r = await d.req('GET', '/api/admin/schedule');
+    const kept = r.j.exceptions.find(e => e.date_from === '2026-12-01' && e.n === lesson.n);
+    ok(!!kept && kept.cancelled === true, 'исключение звонка сохранилось после повторного импорта');
   }
   r = await d.req('GET', '/api/admin/schedule'); ok(r.s === 200 && Array.isArray(r.j.bells), 'расписание отдаётся админке');
   r = await d.req('PUT', '/api/admin/schedule/bells', { bells: [] }); ok(r.s === 404, 'постоянные звонки больше не правятся в админке');
@@ -118,7 +127,17 @@ class Client {
   // замены
   r = await d.req('POST', '/api/admin/subs', { date: '2026-10-22', lessons: '3', classes: '8А, 8Б', subject: 'Музыка', room: '201', teacher: 'Петрова', absent: 'Иванов', note: '' });
   ok(r.s === 201 || r.s === 200, 'замена добавлена сразу для двух классов');
+  // воскресенье — выходной: ни замена, ни изменение звонка на него не ставятся (2026-11-01 — воскресенье)
+  r = await d.req('POST', '/api/admin/subs', { date: '2026-11-01', lessons: '1', classes: '8А', subject: 'Химия', room: '110' });
+  ok(r.s === 400, 'замена на воскресенье отклонена');
+  r = await d.req('GET', '/api/admin/schedule'); const anyBell = r.j.bells[0];
+  r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: anyBell.id, date_from: '2026-11-01', date_to: '2026-11-01', cancelled: true });
+  ok(r.s === 400, 'изменение звонка на воскресенье отклонено');
   r = await d.req('GET', '/api/admin/subs'); const mine = r.j.filter(x => x.subject === 'Музыка');
+  // публичная страница не должна показывать, кого заменили
+  r = await d.req('POST', '/api/admin/subs', { date: '2026-12-02', lessons: '2', classes: '8А', subject: 'Химия', room: '110', teacher: 'Сидорова', absent: 'ТестОтсутствующий', note: '' });
+  const pub = await new Client().req('GET', '/api/public/state');
+  ok(pub.s === 200 && pub.j.substitutions.some(x => x.subject === 'Химия') && !JSON.stringify(pub.j).includes('ТестОтсутствующий'), 'публичная страница без фамилии заменяемого учителя');
   // ручная замена «1-3» на три класса: по порядку, не всем сразу
   r = await d.req('POST', '/api/admin/subs', { date: '2026-10-27', lessons: '1-3', classes: '6Б, 5Б, 5А', subject: 'Физика', room: '105' });
   r = await d.req('GET', '/api/admin/subs'); const ph = r.j.filter(x => x.subject === 'Физика' && x.date === '2026-10-27');
@@ -157,7 +176,8 @@ class Client {
   ok(wx.status === 200 && wj && typeof wj === 'object' && !('error' in wj), 'погода отвечает без ошибки сервера (данные или пусто, если нет сети)');
 
   // срочное сообщение: готовый вариант, своя формулировка, снятие
-  r = await d.req('PUT', '/api/admin/urgent', { preset: 'missile' }); ok(r.s === 200 && r.j.active === true, 'готовый вариант «Ракетная опасность» включён одним нажатием');
+  r = await d.req('PUT', '/api/admin/urgent', { preset: 'missile' }); ok(r.s === 400 && !(await stateJ()).urgent, 'готовая тревога без второго подтверждения не уходит на экраны');
+  r = await d.req('PUT', '/api/admin/urgent', { preset: 'missile', confirmed: true }); ok(r.s === 200 && r.j.active === true, 'готовый вариант «Ракетная опасность» включён одним нажатием');
   st = await stateJ(); ok(st.urgent && st.urgent.title === 'Ракетная опасность' && st.urgent.source === 'МЧС России' && st.urgent.since > 0, 'вариант попал на экран с источником и временем включения');
   r = await d.req('PUT', '/api/admin/urgent', { preset: 'nope' }); ok(r.s === 400, 'неизвестный готовый вариант отклонён');
   r = await d.req('PUT', '/api/admin/urgent', { title: 'Тест', source: 'Школа' }); ok(r.s === 200 && r.j.active === true, 'свой текст включён');
@@ -202,9 +222,12 @@ class Client {
   st = await stateJ(); ok(st.carousel.some(c => c.id === 'a' + annId && c.place === 'center'), 'объявление попало на экран в центр');
   r = await d.req('DELETE', '/api/admin/announcements/' + annId); ok(r.s === 200, 'объявление удалено');
 
-  // звонки на даты: отмена урока на сегодня и возврат
+  // звонки на даты: отмена урока на сегодня и возврат (в воскресенье изменения звонков не ставятся — блок пропускаем)
+  const todayIso = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); // дата по Москве, как на сервере
+  const sundayToday = new Date(todayIso + 'T12:00:00Z').getUTCDay() === 0;
+  if (sundayToday) console.log('ПРОПУСК звонков на сегодня: сегодня воскресенье, изменения звонков не ставятся');
+  if (!sundayToday) {
   r = await d.req('GET', '/api/admin/schedule'); const lessonBell = r.j.bells.find(b => !b.meal);
-  const todayIso = new Date().toISOString().slice(0, 10);
   r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: lessonBell.id, date_from: todayIso, date_to: '', cancelled: true }); ok(r.s === 201, 'урок отменён на дату');
   const exId = r.j.id;
   st = await stateJ(); ok(st.bells.some(b => b.n === lessonBell.n && b.cancelled), 'отмена попала на экран (звонки)');
@@ -218,6 +241,7 @@ class Client {
   }
   r = await d.req('DELETE', '/api/admin/schedule/bell-exceptions/' + exId); ok(r.s === 200, 'отмена на дату убрана');
   st = await stateJ(); ok(!st.bells.some(b => b.cancelled), 'после удаления урок снова идёт');
+  }
 
   // выход
   r = await d.req('POST', '/api/auth/logout'); r = await d.req('GET', '/api/admin/overview'); ok(r.s === 401, 'после выхода доступ закрыт');
