@@ -4,18 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Расписание школы</title>
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/parents.css">
 </head>
-<body class="viewer">
-<div class="top">
-  <h1>Расписание школы</h1>
-  <label>Класс <select id="cls"></select></label>
-</div>
-<div class="tabs" id="tabs"></div>
-<div id="subs"></div>
-<div class="card" id="day"></div>
-<div class="card"><h2>Расписание звонков</h2><table class="bt" id="bells"></table></div>
-<p class="dim" id="upd"></p>
+<body class="parents">
+<header class="ph">
+  <div class="brand">
+    <img id="logo" alt="" hidden>
+    <div><b id="school">Расписание школы</b><span id="now"></span></div>
+  </div>
+  <label class="cls">Класс <select id="cls"></select></label>
+</header>
+<nav class="tabs" id="tabs" aria-label="Дни недели"></nav>
+<main class="grid">
+  <section class="card" id="subsCard" hidden><h2>Замены на сегодня</h2><div id="subs"></div></section>
+  <section class="card wide"><h2 id="dayTitle"></h2><div id="day"></div></section>
+  <section class="card" id="postersCard" hidden><h2>Объявления</h2><div class="posters" id="posters"></div></section>
+  <section class="card"><h2>Звонки</h2><table class="bt" id="bells"></table></section>
+</main>
+<p class="upd" id="upd"></p>
 <div class="offline" id="offline" hidden>Нет связи с сервером. Показано последнее сохранённое расписание, оно обновится само.</div>
 <script src="/common.js"></script>
 <script src="/index.js"></script>

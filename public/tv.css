@@ -1,5 +1,5 @@
 /* Экран в холле. Светлая тема по макету лицея; всё в vw/vh — одинаково на Full HD и 4K. */
-body.tv { --bg:#e7e8eb; --panel:#fff; --stripe:#f3f3f5; --text:#16181f; --dim:#8b909c; --red:#db4755; --red2:#f2565a; --red-bg:rgba(219,71,85,.12); --accent:#db4755;
+body.tv { --bg:#d9dde4; --panel:#f1f3f6; --stripe:#e7eaf0; --text:#1f2330; --dim:#6e7584; --red:#db4755; --red2:#f2565a; --red-bg:rgba(219,71,85,.12); --accent:#db4755;
   overflow:hidden; cursor:none; font-size:1.3vw; background:var(--bg); }
 /* тёмная тема (и ночной экран) */
 body.tv.dark { --bg:#0f1116; --panel:#1b1e26; --stripe:#232733; --text:#e9ebf0; --dim:#8a90a0; --red:#ef6470; --red2:#f2787f; --red-bg:rgba(239,100,112,.16); --accent:#ef6470; }
@@ -59,7 +59,11 @@ body.tv.dark .bl i { border-color:#4a4f5c; } body.tv.dark .bhead { color:#5d6372
 .col { background:var(--panel); border-radius:1.2vw; box-shadow:0 .15vw .6vw rgba(0,0,0,.1); display:grid; overflow:hidden; min-height:0; }
 .col .cn { text-align:center; font-weight:800; font-size:1.5vw; color:var(--red); padding-top:.3vw; }
 .col .ls { display:grid; min-height:0; }
-.c { overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:.3vw; padding:0 .8vw; font-size:1.25vw; font-weight:600; min-width:0; }
+.c { overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:.3vw; padding:0 .8vw; font-size:calc(1.25vw * var(--fs, 1)); font-weight:600; min-width:0; }
+/* оформление из админки: скрытые блоки */
+body.no-wx #wx { display:none !important; }
+body.no-bells .bellsCard { display:none; }
+body.no-bells .mid { grid-template-columns: 14vw 1fr 0; }
 .c:nth-child(even) { background:var(--stripe); }
 .c span { overflow:hidden; text-overflow:clip; white-space:nowrap; }
 .c b { font-weight:700; }

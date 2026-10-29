@@ -1,0 +1,55 @@
+/* Публичная страница для родителей: ПК и телефон, без входа. Цвета — светлая тема, тёмная по настройке системы. */
+:root { --bg:#f1f4f8; --card:#ffffff; --text:#1d2433; --dim:#6b7589; --accent:#c8374a; --accent-soft:#fbe9ec; --line:#e5e9f0; --chg:#fdf3e1; --chg-line:#d9962b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#0f141d; --card:#182030; --text:#e8edf5; --dim:#8b96aa; --accent:#ff6b7b; --accent-soft:rgba(255,107,123,.14); --line:#263044; --chg:rgba(217,150,43,.14); --chg-line:#d9962b; }
+}
+* { box-sizing: border-box; }
+html, body { margin:0; }
+body.parents { background:var(--bg); color:var(--text); font-family:"SB Sans", system-ui, Arial, sans-serif; font-size:16px; line-height:1.4; overflow-x:hidden; }
+.dim { color:var(--dim); }
+
+.ph { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:16px; max-width:1100px; margin:0 auto; }
+.brand { display:flex; gap:12px; align-items:center; min-width:0; }
+.brand img { height:44px; width:auto; max-width:120px; object-fit:contain; }
+.brand b { display:block; font-size:20px; line-height:1.2; }
+.brand span { color:var(--dim); font-size:14px; }
+.cls { font-size:15px; color:var(--dim); display:flex; align-items:center; gap:8px; }
+.cls select { font:inherit; font-size:18px; padding:10px 14px; min-height:44px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+
+.tabs { display:flex; gap:8px; overflow-x:auto; padding:0 16px 12px; max-width:1100px; margin:0 auto; scrollbar-width:none; }
+.tabs::-webkit-scrollbar { display:none; }
+.tabs button { flex:0 0 auto; min-height:44px; padding:0 18px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); font:inherit; font-size:16px; cursor:pointer; }
+.tabs button.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+
+.grid { display:grid; gap:12px; padding:0 16px 24px; max-width:1100px; margin:0 auto; grid-template-columns:1fr; }
+@media (min-width:860px) { .grid { grid-template-columns:1.6fr 1fr; align-items:start; } .grid .wide { grid-row:span 3; } }
+.card { background:var(--card); border-radius:16px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.06); min-width:0; }
+.card[hidden] { display:none; }
+.card h2 { margin:0 0 12px; font-size:14px; color:var(--dim); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+
+.sub { padding:10px 12px; border-left:4px solid var(--accent); background:var(--accent-soft); border-radius:10px; margin-bottom:8px; }
+.sub b { display:block; }
+.sub small { color:var(--dim); }
+
+.les { display:grid; grid-template-columns:64px 1fr; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+.les:first-child { border-top:0; padding-top:0; }
+.les .n { color:var(--dim); font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+.les .n small { display:block; font-size:12px; font-weight:400; }
+.les b { font-size:17px; font-weight:700; }
+.les small { display:block; color:var(--dim); font-size:14px; }
+.les.chg { background:var(--chg); border-radius:10px; padding:10px; margin:0 -10px; border-top-color:transparent; }
+.les.chg .was { display:block; color:var(--dim); text-decoration:line-through; font-size:13px; }
+.les.off b { color:var(--dim); text-decoration:line-through; }
+
+.bt { width:100%; border-collapse:collapse; font-size:15px; }
+.bt td { padding:8px 4px; border-top:1px solid var(--line); vertical-align:top; }
+.bt td.t { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; width:1%; padding-right:12px; }
+.bt tr.chg td { color:var(--accent); font-weight:700; }
+.bt small { color:var(--dim); font-weight:400; }
+
+.posters { display:grid; gap:10px; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+.posters img { width:100%; border-radius:12px; display:block; }
+
+.upd { text-align:center; color:var(--dim); font-size:13px; padding:0 16px 20px; }
+.offline { position:fixed; left:16px; right:16px; bottom:12px; background:#6b4e00; color:#ffe08a; padding:8px 12px; border-radius:10px; font-size:14px; }
+.offline[hidden] { display:none; }

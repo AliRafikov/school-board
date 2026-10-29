@@ -62,17 +62,17 @@ class Client {
   r = await z.req('GET', '/api/admin/schedule'); ok(r.s === 200, 'завуч видит расписание');
   r = await z.req('PUT', '/api/admin/schedule/lesson', { cls: '5А', day: 0, n: 1, subject: 'Тест', teacher: '', room: '1' }); ok(r.s === 404, 'постоянный урок больше не правится в админке');
   r = await z.req('PUT', '/api/admin/schedule/day', { day: 0, items: [] }); ok(r.s === 404, 'постоянный день больше не правится в админке');
-  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'Тест день', teacher: '', room: '2' }, { cls: '5Б', n: 1, subject: 'Тест день', teacher: '', room: '2' }] });
+  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-12-04', items: [{ cls: '5А', n: 1, subject: 'Тест день', teacher: '', room: '2' }, { cls: '5Б', n: 1, subject: 'Тест день', teacher: '', room: '2' }] });
   ok(r.s === 200 && r.j.saved === 2, 'замены на дату сохранены пачкой (2 ячейки)');
-  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'отменён', teacher: '', room: '' }] }); ok(r.s === 200, 'урок отменён для класса на дату');
+  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-12-04', items: [{ cls: '5А', n: 1, subject: 'отменён', teacher: '', room: '' }] }); ok(r.s === 200, 'урок отменён для класса на дату');
   let st0 = await stateJ();
-  ok(st0.overlay && st0.overlay['2026-10-26'] && st0.overlay['2026-10-26']['5А'][1].cancelled === true, 'отмена попала в состояние экрана');
+  ok(st0.overlay && st0.overlay['2026-12-04'] && st0.overlay['2026-12-04']['5А'][1].cancelled === true, 'отмена попала в состояние экрана');
   r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-13-40', items: [{ cls: '5А', n: 1, subject: 'x' }] }); ok(r.s === 400, 'неверная дата отклонена');
-  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [] }); ok(r.s === 400, 'пустые изменения отклонены');
-  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-10-26', items: [{ cls: '5А', n: 1, subject: 'x' }] }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'замены на дату без метки отклонены (CSRF)');
-  r = await z.req('GET', '/api/admin/subs'); const dayRows = r.j.filter(x => x.date === '2026-10-26');
+  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-12-04', items: [] }); ok(r.s === 400, 'пустые изменения отклонены');
+  r = await z.req('PUT', '/api/admin/subs/day', { date: '2026-12-04', items: [{ cls: '5А', n: 1, subject: 'x' }] }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'замены на дату без метки отклонены (CSRF)');
+  r = await z.req('GET', '/api/admin/subs'); const dayRows = r.j.filter(x => x.date === '2026-12-04');
   r = await z.req('DELETE', '/api/admin/subs', { ids: dayRows.map(x => x.id) }); ok(r.s === 200, 'тестовые замены на дату убраны');
-  st0 = await stateJ(); ok(!(st0.overlay || {})['2026-10-26'], 'после удаления экран без замен на дату');
+  st0 = await stateJ(); ok(!(st0.overlay || {})['2026-12-04'], 'после удаления экран без замен на дату');
 
   // IT: не может трогать директора
   const it = new Client();
@@ -173,6 +173,14 @@ class Client {
 
   // тема, ночь, погода
   r = await d.req('PUT', '/api/admin/settings', { theme: 'neon' }); ok(r.s === 400, 'неизвестная тема отклонена');
+  // оформление экрана: цвет только в формате #RRGGBB, размер 80–130, переключатели; завуч не меняет
+  r = await d.req('PUT', '/api/admin/settings', { look_bg: 'red' }); ok(r.s === 400, 'цвет не в формате #RRGGBB отклонён');
+  r = await z.req('PUT', '/api/admin/settings', { look_bg: '#112233' }); ok(r.s === 403, 'завуч не меняет оформление экрана');
+  r = await d.req('PUT', '/api/admin/settings', { look_bg: '#112233', look_font: 500, look_weather: false });
+  ok(r.s === 200 && r.j.look_bg === '#112233' && r.j.look_font === '130' && r.j.look_weather === '0', 'оформление сохранено, размер ограничен 130 %');
+  st = await stateJ(); ok(st.look && st.look.bg === '#112233' && st.look.weather === false && st.look.font === 130, 'оформление попало на экран');
+  r = await d.req('PUT', '/api/admin/settings', { look_bg: '', look_font: 100, look_weather: true });
+  st = await stateJ(); ok(st.look && st.look.bg === '' && st.look.weather === true, 'оформление сброшено к стандартному');
   r = await d.req('PUT', '/api/admin/settings', { night_from: '9pm' }); ok(r.s === 400, 'неверное время ночи отклонено');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' }); ok(r.s === 200, 'тема возвращена в «авто»');

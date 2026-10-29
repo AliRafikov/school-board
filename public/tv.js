@@ -178,6 +178,19 @@ function applyTheme() {
   document.body.classList.toggle('night', night);
   $('night').hidden = !night;
   if (night) { $('fs').classList.remove('on'); layers.forEach(l => l.classList.remove('on')); cl.forEach(l => l.classList.remove('on')); }
+  applyLook();
+}
+// Оформление из админки: свои цвета только для светлой темы, размер таблицы и что показывать
+function applyLook() {
+  if (!S) return;
+  const L = S.look || {}, b = document.body, st = b.style;
+  const light = !b.classList.contains('dark');
+  const set = (name, v) => { if (light && v) st.setProperty(name, v); else st.removeProperty(name); };
+  set('--bg', L.bg); set('--panel', L.panel); set('--text', L.text);
+  set('--accent', L.accent); set('--red', L.accent);
+  document.documentElement.style.setProperty('--fs', String((L.font || 100) / 100));
+  b.classList.toggle('no-wx', L.weather === false);
+  b.classList.toggle('no-bells', L.bells === false);
 }
 // Срочное сообщение: закрывает основную часть экрана, шапка остаётся; пока не сняли в админке.
 // После снятия 5 минут показываем зелёный «Отбой».
@@ -313,7 +326,7 @@ async function showCenter() {
 let bannerKey = '';
 function showBanners() {
   clearTimeout(bTimer);
-  const list = S.carousel.filter(i => i.place === 'banner' && (i.kind === 'image' || i.kind === 'video') && eligible(i));
+  const list = (S.look && S.look.banners === false) ? [] : S.carousel.filter(i => i.place === 'banner' && (i.kind === 'image' || i.kind === 'video') && eligible(i));
   $('banners').hidden = !list.length;
   document.querySelector('.mid').classList.toggle('nob', !list.length); // без баннеров центр занимает всю ширину
   if (!list.length) { bannerKey = ''; return; }

@@ -23,6 +23,7 @@ const ICONS = {
   calls: svgIc('<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
   subs: svgIc('<path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/>'),
   ann: svgIc('<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>'),
+  look: svgIc('<path d="M12 2.5a9.5 9.5 0 0 0 0 19c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6h1.9a4.7 4.7 0 0 0 4.7-4.7C21.5 6 17.4 2.5 12 2.5z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7.5" r="1.2"/><circle cx="15" cy="8" r="1.2"/>'),
   system: svgIc('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/>'),
 };
 
@@ -91,7 +92,7 @@ function renderPasswordForm(forced) {
 
 // ---------- каркас ----------
 const NAV = [['overview', 'Обзор', () => true], ['schedule', 'Расписание', m => m.can.schedule], ['calls', 'Звонки', m => m.can.schedule], ['subs', 'Замены', m => m.can.subs],
-  ['ann', 'Объявления', m => m.can.announcements || m.can.media], ['system', 'Система', () => true]];
+  ['ann', 'Объявления', m => m.can.announcements || m.can.media], ['look', 'Оформление', m => m.can.settings], ['system', 'Система', () => true]];
 // разделы внутри «Система»: видны по правам роли
 const SYS = [['screens', 'Экраны', m => m.can.screens, () => viewScreens()], ['users', 'Пользователи', m => m.can.users, () => viewUsers()],
   ['settings', 'Настройки', m => m.can.settings, () => viewSettings()], ['audit', 'Журнал', m => m.can.audit, () => viewAudit()],
@@ -517,6 +518,10 @@ async function viewSchedule() {
       <div class="row"><label class="f" style="flex:1;min-width:240px">Файл<input type="file" id="xf" accept=".xlsx"></label>
         <button class="btn" id="xr" type="button">Проверить файл</button></div>
       <div id="xres" style="margin-top:12px"></div></div>
+    <div class="card"><h2>Просмотр: что на уроке</h2>
+      <p class="muted small" style="margin-top:0">Уроки класса на дату так, как их видят экраны: постоянное расписание и замены этой даты.</p>
+      <div class="row"><label class="f">Класс<select id="vc"></select></label><label class="f">Дата<input type="date" id="vd"></label></div>
+      <div id="viewBox" style="margin-top:12px"></div></div>
 `);
   if (!canEdit) document.querySelectorAll('button').forEach(b => { if (b.id !== 'xr') b.disabled = true; });
   // импорт файла
@@ -550,6 +555,37 @@ async function viewSchedule() {
       document.getElementById('xx').onclick = () => { xres.innerHTML = ''; token = null; };
     } catch (er) { msg(xres, er.message); }
   };
+  // просмотр: уроки класса на дату с учётом замен этой даты (как на экранах)
+  const [sch, subsAll] = await Promise.all([api('GET', '/api/admin/schedule'), api('GET', '/api/admin/subs')]);
+  const cSel = document.getElementById('vc'), dSel = document.getElementById('vd'), vBox = document.getElementById('viewBox');
+  dSel.value = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); // сегодня по Москве
+  cSel.innerHTML = sch.classes.map(c => `<option>${esc(c)}</option>`).join('');
+  // звонок, который относится к параллели класса (по диапазону классов в листе «Звонки»)
+  const bellFor = (n, cls) => {
+    const g = parseInt(cls, 10) || 0;
+    const b = sch.bells.find(x => !x.meal && x.n === n && (() => { const nums = (String(x.classes || '').match(/\d+/g) || []).map(Number); return !nums.length || (g >= Math.min(...nums) && g <= Math.max(...nums)); })());
+    return b ? `${b.start}–${b.end}` : '';
+  };
+  const drawView = () => {
+    const c = cSel.value, iso = dSel.value;
+    if (!iso) return msg(vBox, 'Выберите дату');
+    const w = new Date(iso + 'T12:00:00Z').getUTCDay();
+    if (w === 0) { vBox.innerHTML = '<p class="muted">Воскресенье — выходной, уроков нет.</p>'; return; }
+    const base = sch.lessons.filter(l => l.cls === c && l.day === w - 1);
+    const subs = subsAll.filter(s => s.date === iso && s.cls === c);
+    const nums = [...new Set([...base.map(l => l.n), ...subs.flatMap(s => lessonNumsOf(s.lessons))])].sort((a, b) => a - b);
+    if (!nums.length) { vBox.innerHTML = '<p class="muted">У этого класса на эту дату уроков нет.</p>'; return; }
+    const rows = nums.map(n => {
+      const L = base.find(l => l.n === n);
+      const S = subs.find(s => lessonNumsOf(s.lessons).includes(n));
+      const cur = L ? `${esc(L.subject)}${L.room ? ` · к.${esc(L.room)}` : ''}${L.teacher ? `<br><small>${esc(L.teacher)}</small>` : ''}` : '<span class="muted">—</span>';
+      const sub = S ? `<span class="now">${esc(S.subject || (L && L.subject) || '')}${S.room ? ` · к.${esc(S.room)}` : ''}</span><br><small>${esc(S.teacher || '')}${S.absent ? ' · вместо ' + esc(S.absent) : ''}${S.note ? ' · ' + esc(S.note) : ''}</small>` : '<span class="muted">без замены</span>';
+      return `<tr><td class="num">${n}</td><td class="num">${esc(bellFor(n, c))}</td><td>${cur}</td><td>${sub}</td></tr>`;
+    }).join('');
+    vBox.innerHTML = `<table class="lessons"><thead><tr><th>Урок</th><th>Звонок</th><th>По расписанию</th><th>На эту дату</th></tr></thead><tbody>${rows}</tbody></table>`;
+  };
+  cSel.onchange = drawView; dSel.onchange = drawView;
+  drawView();
 }
 
 // ---------- замены ----------
@@ -850,7 +886,37 @@ async function viewAnn() {
 }
 
 // ---------- запуск ----------
-const VIEWS = { overview: viewOverview, schedule: viewSchedule, calls: viewCalls, subs: viewSubs, ann: viewAnn };
+const VIEWS = { overview: viewOverview, schedule: viewSchedule, calls: viewCalls, subs: viewSubs, ann: viewAnn, look: viewLook };
+
+// ---------- оформление экрана ----------
+const LOOK_COLORS = [['look_bg', 'Фон', '#d9dde4'], ['look_panel', 'Панели (блоки)', '#f1f3f6'], ['look_text', 'Текст', '#1f2330'], ['look_accent', 'Акцент (полосы, текущий урок)', '#db4755']];
+async function viewLook() {
+  const s = await api('GET', '/api/admin/settings');
+  const colorRow = ([k, label, def]) => `<div class="row" style="align-items:center;gap:12px;margin-bottom:8px"><label class="check" style="min-width:260px"><input type="checkbox" data-use="${k}" ${s[k] ? 'checked' : ''}> ${esc(label)}</label><input type="color" data-k="${k}" value="${esc(s[k] || def)}"></div>`;
+  shell('Оформление', `
+    <div class="card"><h2>Цвета светлой темы</h2>
+      <p class="muted small" style="margin-top:0">Тёмная тема остаётся тёмной. Если галочка не стоит, используется стандартный цвет.</p>
+      ${LOOK_COLORS.map(colorRow).join('')}</div>
+    <div class="card"><h2>Что показывать на экране</h2>
+      <label class="check"><input type="checkbox" data-k="look_weather" ${s.look_weather !== '0' ? 'checked' : ''}> Погода в шапке</label>
+      <label class="check"><input type="checkbox" data-k="look_bells" ${s.look_bells !== '0' ? 'checked' : ''}> Расписание звонков справа</label>
+      <label class="check"><input type="checkbox" data-k="look_banners" ${s.look_banners !== '0' ? 'checked' : ''}> Маленькие баннеры с QR-кодами слева</label>
+      <label class="f" style="margin-top:10px">Размер таблицы уроков, % (80–130)<input type="number" data-k="look_font" min="80" max="130" step="5" value="${esc(s.look_font || '100')}" style="width:110px"></label></div>
+    <div class="card"><h2>Как сейчас выглядит экран</h2>
+      <div class="tvframe" id="tvWrap"><iframe src="/tv?preview=1" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
+    <div class="row"><button class="btn primary" id="lookSave" type="button">Сохранить оформление</button></div>
+    <div id="lookMsg" style="margin-top:10px"></div>`);
+  const wrap = document.getElementById('tvWrap'), frame = document.getElementById('tvFrame');
+  const fit = () => { frame.style.transform = `scale(${wrap.clientWidth / 1920})`; };
+  new ResizeObserver(fit).observe(wrap); fit();
+  document.getElementById('lookSave').onclick = async () => {
+    const body = {};
+    LOOK_COLORS.forEach(([k]) => { body[k] = document.querySelector(`input[data-use="${k}"]`).checked ? document.querySelector(`input[data-k="${k}"]`).value : ''; });
+    document.querySelectorAll('input[data-k^="look_"]:not([type="color"])').forEach(el => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; });
+    try { await api('PUT', '/api/admin/settings', body); msg(document.getElementById('lookMsg'), 'Сохранено. Экраны обновятся в течение минуты.', 'ok'); frame.src = '/tv?preview=1'; }
+    catch (er) { msg(document.getElementById('lookMsg'), er.message); }
+  };
+}
 // старые адреса (#audit, #media, #screens и т. п.) переводим в новые разделы
 const LEGACY = { audit: ['system', 'audit'], screens: ['system', 'screens'], users: ['system', 'users'], settings: ['system', 'settings'], help: ['system', 'help'], profile: ['system', 'profile'], media: ['ann', ''] };
 function readHash() {

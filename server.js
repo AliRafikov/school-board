@@ -387,6 +387,14 @@ async function adminApi(req, res, p, url, user) {
       if ('theme' in b) { if (!['auto', 'light', 'dark'].includes(b.theme)) return fail(res, 400, 'Неизвестная тема'); upd.theme = b.theme; }
       for (const k of ['night_from', 'night_to']) if (k in b) { if (!/^\d{2}:\d{2}$/.test(String(b[k]))) return fail(res, 400, 'Время ночи в формате ЧЧ:ММ'); upd[k] = String(b[k]); }
       if ('school_name' in b) upd.school_name = String(b.school_name).trim().slice(0, 80) || before.school_name;
+      // оформление экрана: цвета #RRGGBB или пусто (стандартный), размер таблицы 80–130 %, переключатели показа
+      for (const k of ['look_bg', 'look_panel', 'look_text', 'look_accent']) if (k in b) {
+        const v = String(b[k] || '').trim();
+        if (v && !/^#[0-9a-fA-F]{6}$/.test(v)) return fail(res, 400, 'Цвет в формате #RRGGBB или пусто');
+        upd[k] = v;
+      }
+      if ('look_font' in b) upd.look_font = String(clampInt(b.look_font, 80, 130, 100));
+      for (const k of ['look_weather', 'look_bells', 'look_banners']) if (k in b) upd[k] = (b[k] === true || b[k] === 1 || b[k] === '1') ? '1' : '0';
       for (const [k, v] of Object.entries(upd)) if (String(v) !== String(before[k])) { setSetting(k, v); audit({ user, action: 'settings_changed', target: k, was: before[k], now: v }); }
       S.bump();
       return json(res, 200, allSettings());
