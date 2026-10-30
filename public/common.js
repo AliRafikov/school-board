@@ -64,3 +64,10 @@ function lessonCell(l, compact) {
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+// Каникулы: название и дата возвращения (общая вёрстка для экрана и публичной страницы)
+function holidayHtml(h) {
+
+  const back = h.back.split('-').reverse().join('.');
+  return `<div class="holiday"><div class="hol-t">${esc(h.title)}</div><div class="hol-s">Занятия возобновятся ${back}</div></div>`;
+}

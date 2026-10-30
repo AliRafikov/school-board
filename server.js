@@ -394,6 +394,14 @@ async function adminApi(req, res, p, url, user) {
         upd[k] = v;
       }
       if ('look_font' in b) upd.look_font = String(clampInt(b.look_font, 80, 130, 100));
+      // каникулы: обе даты или ни одной, «по» не раньше «с»
+      if ('holiday_from' in b || 'holiday_to' in b) {
+        const f = String(b.holiday_from || '').trim(), t = String(b.holiday_to || '').trim();
+        if (!f !== !t) return fail(res, 400, 'Укажите обе даты каникул или очистите обе');
+        if (f && (!/^\d{4}-\d{2}-\d{2}$/.test(f) || !/^\d{4}-\d{2}-\d{2}$/.test(t) || t < f)) return fail(res, 400, 'Даты каникул: «с» не позже «по»');
+        upd.holiday_from = f; upd.holiday_to = t;
+      }
+      if ('holiday_title' in b) upd.holiday_title = String(b.holiday_title || '').trim().slice(0, 80);
       for (const k of ['look_weather', 'look_bells', 'look_banners']) if (k in b) upd[k] = (b[k] === true || b[k] === 1 || b[k] === '1') ? '1' : '0';
       for (const [k, v] of Object.entries(upd)) if (String(v) !== String(before[k])) { setSetting(k, v); audit({ user, action: 'settings_changed', target: k, was: before[k], now: v }); }
       S.bump();

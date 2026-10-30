@@ -124,3 +124,7 @@ body.urgent #fs, body.urgent #night { display:none !important; }
 .bl.now.chg, .bl.now.chg small { color:#fff; }
 /* отменённый звонок, который сейчас идёт: тоже белый текст на красном */
 .bl.now.off, .bl.now.off small { color:#fff; }
+/* каникулы: вместо уроков — название и дата возвращения */
+.holiday { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:2vh; padding:2vh 2vw; }
+.hol-t { font-size:4.2vw; font-weight:800; color:var(--red); line-height:1.1; }
+.hol-s { font-size:2.1vw; color:var(--dim); }

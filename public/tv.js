@@ -98,6 +98,8 @@ function renderClasses() {
   // шрифт грузится с задержкой: замер до загрузки даёт неверную ширину, поэтому повторяем после неё
   if (!fontsChecked && document.fonts) { fontsChecked = true; document.fonts.ready.then(() => renderClasses()); }
   const now = schoolNow(S.tz), day = now.day;
+  // каникулы: вместо уроков название и дата возвращения (экран не пустой)
+  if (S.holiday) { clsPage = 0; $('classes').innerHTML = holidayHtml(S.holiday); return; }
   // в воскресенье уроков нет: расписание понедельника на выходной не показываем
   if (now.day > 5) { clsPage = 0; $('classes').innerHTML = '<div class="empty">Выходной</div>'; return; }
   const list = S.classes, MAXC = 8;

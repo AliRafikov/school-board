@@ -53,3 +53,7 @@ body.parents { background:var(--bg); color:var(--text); font-family:"SB Sans", s
 .upd { text-align:center; color:var(--dim); font-size:13px; padding:0 16px 20px; }
 .offline { position:fixed; left:16px; right:16px; bottom:12px; background:#6b4e00; color:#ffe08a; padding:8px 12px; border-radius:10px; font-size:14px; }
 .offline[hidden] { display:none; }
+/* каникулы */
+.holiday { text-align:center; padding:12px 8px; }
+.hol-t { font-size:26px; font-weight:800; color:var(--accent); }
+.hol-s { font-size:17px; color:var(--dim); margin-top:6px; }

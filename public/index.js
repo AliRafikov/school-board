@@ -63,6 +63,10 @@ function render() {
     return `<div class="sub"><b>${esc(x.lessons)} урок · ${esc(x.subject)}${x.room ? ' · каб. ' + esc(x.room) : ''}</b><small>${esc(x.teacher)}${note ? ' · ' + esc(note) : ''}</small></div>`;
   }).join('');
 
+  // каникулы: вместо уроков — название и дата возвращения
+  $('holidayCard').hidden = !S.holiday;
+  $('holidayCard').innerHTML = S.holiday ? holidayHtml(S.holiday) : '';
+  $('dayCard').hidden = !!S.holiday;
   $('dayTitle').textContent = `${DAYS_FULL[day]}, ${fmtDate(isoForDay(day))}, ${cls}`;
   const list = lessonsFor(cls, day);
   $('day').innerHTML = list.length ? list.map(l => lessonRow(l, cls)).join('') : '<p class="dim">Уроков нет</p>';

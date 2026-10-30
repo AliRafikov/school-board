@@ -181,6 +181,15 @@ class Client {
   st = await stateJ(); ok(st.look && st.look.bg === '#112233' && st.look.weather === false && st.look.font === 130, 'оформление попало на экран');
   r = await d.req('PUT', '/api/admin/settings', { look_bg: '', look_font: 100, look_weather: true });
   st = await stateJ(); ok(st.look && st.look.bg === '' && st.look.weather === true, 'оформление сброшено к стандартному');
+  // каникулы: обе даты или ни одной; «по» не раньше «с»; сегодня в каникулах — на экране название и дата возвращения
+  const tIso = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+  r = await d.req('PUT', '/api/admin/settings', { holiday_from: tIso }); ok(r.s === 400, 'каникулы без второй даты отклонены');
+  r = await d.req('PUT', '/api/admin/settings', { holiday_from: tIso, holiday_to: '2000-01-01' }); ok(r.s === 400, 'каникулы «по» раньше «с» отклонены');
+  r = await d.req('PUT', '/api/admin/settings', { holiday_from: tIso, holiday_to: tIso, holiday_title: 'Осенние каникулы' });
+  ok(r.s === 200, 'каникулы сохранены');
+  st = await stateJ(); ok(st.holiday && st.holiday.title === 'Осенние каникулы' && st.holiday.back > tIso, 'каникулы попали на экран с датой возвращения');
+  r = await d.req('PUT', '/api/admin/settings', { holiday_from: '', holiday_to: '', holiday_title: '' });
+  st = await stateJ(); ok(r.s === 200 && !st.holiday, 'каникулы сняты, экран снова показывает расписание');
   r = await d.req('PUT', '/api/admin/settings', { night_from: '9pm' }); ok(r.s === 400, 'неверное время ночи отклонено');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
   r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' }); ok(r.s === 200, 'тема возвращена в «авто»');

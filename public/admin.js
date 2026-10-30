@@ -518,6 +518,11 @@ async function viewSchedule() {
       <div class="row"><label class="f" style="flex:1;min-width:240px">Файл<input type="file" id="xf" accept=".xlsx"></label>
         <button class="btn" id="xr" type="button">Проверить файл</button></div>
       <div id="xres" style="margin-top:12px"></div></div>
+    ${me.can.settings ? `<div class="card"><h2>Каникулы и праздники</h2>
+      <p class="muted small" style="margin-top:0">В эти даты экраны и публичная страница вместо расписания показывают название и дату возвращения. Чтобы убрать каникулы, очистите обе даты.</p>
+      <div class="row"><label class="f">С<input type="date" id="hf"></label><label class="f">По<input type="date" id="ht"></label><label class="f" style="flex:1;min-width:200px">Название<input type="text" id="hn" maxlength="80" placeholder="Каникулы"></label></div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="hs" type="button">Сохранить каникулы</button></div>
+      <div id="hm" style="margin-top:8px"></div></div>` : ''}
     <div class="card"><h2>Просмотр: что на уроке</h2>
       <p class="muted small" style="margin-top:0">Уроки класса на дату так, как их видят экраны: постоянное расписание и замены этой даты.</p>
       <div class="row"><label class="f">Класс<select id="vc"></select></label><label class="f">Дата<input type="date" id="vd"></label></div>
@@ -555,6 +560,18 @@ async function viewSchedule() {
       document.getElementById('xx').onclick = () => { xres.innerHTML = ''; token = null; };
     } catch (er) { msg(xres, er.message); }
   };
+  // каникулы: заполняем даты из настроек и сохраняем
+  if (me.can.settings) {
+    const hs = await api('GET', '/api/admin/settings');
+    document.getElementById('hf').value = hs.holiday_from || '';
+    document.getElementById('ht').value = hs.holiday_to || '';
+    document.getElementById('hn').value = hs.holiday_title || '';
+    document.getElementById('hs').onclick = async () => {
+      const body = { holiday_from: document.getElementById('hf').value, holiday_to: document.getElementById('ht').value, holiday_title: document.getElementById('hn').value.trim() };
+      try { await api('PUT', '/api/admin/settings', body); msg(document.getElementById('hm'), 'Сохранено. Экраны обновятся в течение минуты.', 'ok'); }
+      catch (er) { msg(document.getElementById('hm'), er.message); }
+    };
+  }
   // просмотр: уроки класса на дату с учётом замен этой даты (как на экранах)
   const [sch, subsAll] = await Promise.all([api('GET', '/api/admin/schedule'), api('GET', '/api/admin/subs')]);
   const cSel = document.getElementById('vc'), dSel = document.getElementById('vd'), vBox = document.getElementById('viewBox');
