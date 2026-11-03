@@ -137,8 +137,10 @@ class Client {
   r = await d.req('POST', '/api/admin/subs', { date: '', lessons: '2', classes: '8А', subject: 'Химия', room: '110' });
   ok(r.s === 400, 'замена без даты отклонена');
   r = await d.req('GET', '/api/admin/schedule'); const anyBell = r.j.bells[0];
-  r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: anyBell.id, date_from: '2026-11-01', date_to: '2026-11-01', cancelled: true });
-  ok(r.s === 400, 'изменение звонка на воскресенье отклонено');
+  if (anyBell) { // звонки есть только если загружен файл расписания (переменная XLSX)
+    r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: anyBell.id, date_from: '2026-11-01', date_to: '2026-11-01', cancelled: true });
+    ok(r.s === 400, 'изменение звонка на воскресенье отклонено');
+  } else console.log('SKIP звонки не загружены (задайте XLSX=путь к файлу расписания)');
   r = await d.req('GET', '/api/admin/subs'); const mine = r.j.filter(x => x.subject === 'Музыка');
   // публичная страница не должна показывать, кого заменили
   r = await d.req('POST', '/api/admin/subs', { date: '2026-12-02', lessons: '2', classes: '8А', subject: 'Химия', room: '110', teacher: 'Сидорова', absent: 'ТестОтсутствующий', note: '' });
@@ -222,19 +224,21 @@ class Client {
 
   // сдвиг звонков на сегодня: с 4-го урока на 30 минут, уроки до него не меняются
   const base = (await stateJ()).bells;
-  r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }); ok(r.s === 200 && r.j.active === true, 'сдвиг звонков с 4-го урока на 30 минут');
-  st = await stateJ();
-  const lesson = (bells, n) => bells.find(b => !b.meal && b.n === n);
-  ok(lesson(st.bells, 3).start === lesson(base, 3).start, 'урок 3 (до сдвига) не меняется');
-  ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start) + 30 && toM(lesson(st.bells, 4).end) === toM(lesson(base, 4).end) + 30, 'урок 4 и его конец сдвинуты на 30 минут');
-  ok(st.bellsNote.includes('сдвинуты на 30'), 'на экране подпись про сдвиг');
-  r = await d.req('GET', '/api/admin/shift'); ok(r.s === 200 && r.j && r.j.from === 4 && r.j.minutes === 30, 'админка видит текущий сдвиг');
-  r = await d.req('PUT', '/api/admin/shift', { from: 99, minutes: 30 }); ok(r.s === 400, 'сдвиг с несуществующего урока отклонён');
-  r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 0 }); ok(r.s === 400, 'нулевой сдвиг отклонён');
-  r = await d.req('PUT', '/api/admin/shift', { reset: true }); ok(r.s === 200 && r.j.active === false, 'сдвиг возвращён');
-  st = await stateJ(); ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start), 'после «Вернуть» звонки как по расписанию');
-  r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'сдвиг без метки отклонён (CSRF)');
-  r = await d.req('PUT', '/api/admin/shift', { reset: true });
+  if (base.some(b => !b.meal)) { // сдвиг нужен уроки из файла расписания (переменная XLSX)
+    r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }); ok(r.s === 200 && r.j.active === true, 'сдвиг звонков с 4-го урока на 30 минут');
+    st = await stateJ();
+    const lesson = (bells, n) => bells.find(b => !b.meal && b.n === n);
+    ok(lesson(st.bells, 3).start === lesson(base, 3).start, 'урок 3 (до сдвига) не меняется');
+    ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start) + 30 && toM(lesson(st.bells, 4).end) === toM(lesson(base, 4).end) + 30, 'урок 4 и его конец сдвинуты на 30 минут');
+    ok(st.bellsNote.includes('сдвинуты на 30'), 'на экране подпись про сдвиг');
+    r = await d.req('GET', '/api/admin/shift'); ok(r.s === 200 && r.j && r.j.from === 4 && r.j.minutes === 30, 'админка видит текущий сдвиг');
+    r = await d.req('PUT', '/api/admin/shift', { from: 99, minutes: 30 }); ok(r.s === 400, 'сдвиг с несуществующего урока отклонён');
+    r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 0 }); ok(r.s === 400, 'нулевой сдвиг отклонён');
+    r = await d.req('PUT', '/api/admin/shift', { reset: true }); ok(r.s === 200 && r.j.active === false, 'сдвиг возвращён');
+    st = await stateJ(); ok(toM(lesson(st.bells, 4).start) === toM(lesson(base, 4).start), 'после «Вернуть» звонки как по расписанию');
+    r = await d.req('PUT', '/api/admin/shift', { from: 4, minutes: 30 }, { 'X-Requested-With': 'evil' }); ok(r.s === 403, 'сдвиг без метки отклонён (CSRF)');
+    r = await d.req('PUT', '/api/admin/shift', { reset: true });
+  } else console.log('SKIP сдвиг звонков: нет уроков в расписании');
 
   // объявления
   r = await d.req('POST', '/api/admin/announcements', { title: 'Тест объявление', duration: 10, priority: 1, date_from: '', date_to: '' });
@@ -249,7 +253,9 @@ class Client {
   const todayIso = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); // дата по Москве, как на сервере
   const sundayToday = new Date(todayIso + 'T12:00:00Z').getUTCDay() === 0;
   if (sundayToday) console.log('ПРОПУСК звонков на сегодня: сегодня воскресенье, изменения звонков не ставятся');
-  if (!sundayToday) {
+  const hasBells = (await d.req('GET', '/api/admin/schedule')).j.bells.some(b => !b.meal);
+  if (!sundayToday && !hasBells) console.log('SKIP звонки на дату: нет уроков в расписании');
+  if (!sundayToday && hasBells) {
   r = await d.req('GET', '/api/admin/schedule'); const lessonBell = r.j.bells.find(b => !b.meal);
   r = await d.req('POST', '/api/admin/schedule/bell-exceptions', { bell_id: lessonBell.id, date_from: todayIso, date_to: '', cancelled: true }); ok(r.s === 201, 'урок отменён на дату');
   const exId = r.j.id;
