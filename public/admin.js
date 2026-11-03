@@ -41,7 +41,7 @@ const msg = (el, text, kind = 'err') => { el.innerHTML = text ? `<div class="msg
 
 const ACTIONS = {
   screen_paired: 'Экран привязан', screen_unpaired: 'Экран отвязан',
-  login: 'Вход', login_failed: 'Неудачный вход', logout: 'Выход', logout_all: 'Выход на всех устройствах', password_changed: 'Смена пароля', password_reset: 'Сброс пароля',
+  login: 'Вход', login_tg: 'Вход через Telegram', tg_linked: 'Telegram привязан', tg_unlinked: 'Telegram отвязан', tg_link_created: 'Создана ссылка для Telegram', login_failed: 'Неудачный вход', logout: 'Выход', logout_all: 'Выход на всех устройствах', password_changed: 'Смена пароля', password_reset: 'Сброс пароля',
   user_created: 'Создан пользователь', user_role_changed: 'Изменена роль', user_renamed: 'Изменено имя', user_enabled: 'Пользователь включён', user_disabled: 'Пользователь отключён',
   settings_changed: 'Изменена настройка', media_uploaded: 'Загружен файл', media_updated: 'Изменён файл', media_deleted: 'Удалён файл', media_reordered: 'Изменён порядок файлов',
   sync_manual: 'Ручная синхронизация', screens_refresh: 'Обновление всех экранов', screen_renamed: 'Переименован экран', first_user: 'Создан первый пользователь',
@@ -53,6 +53,56 @@ const FIELD_LABELS = { title: 'название', duration: 'длительно�
 const detailsRu = r => r.action === 'media_updated' ? 'изменено: ' + String(r.details).split(', ').map(k => FIELD_LABELS[k] || k).join(', ') : r.details;
 const SETTING_LABELS = { tz: 'Часовой пояс', change_ttl_hours: 'Сколько часов подсвечивать изменения', board_seconds: 'Секунд на экране с расписанием', school_name: 'Название школы', display_mode: 'Режим экрана' };
 
+// ---------- Telegram: вход и привязка ----------
+// Вход: сайт создаёт код, сотрудник подтверждает в боте, страница ждёт ответа и входит
+async function tgLogin(box) {
+  box.innerHTML = '<p class="muted small" style="text-align:center">Открываем Telegram…</p>';
+  try {
+    const r = await api('POST', '/api/auth/tg/start', {});
+    box.innerHTML = `<p class="small" style="text-align:center;margin:6px 0">Откройте бот и нажмите «Да, это я».</p>
+      <a class="btn primary" style="width:100%;text-align:center;display:block" href="${esc(r.link)}" target="_blank" rel="noopener">Открыть Telegram</a>
+      <p class="muted small" style="text-align:center">Ссылка действует 2 минуты.</p>`;
+    const until = Date.now() + r.expires_in * 1000;
+    const timer = setInterval(async () => {
+      if (Date.now() > until) { clearInterval(timer); box.innerHTML = '<p class="small" style="text-align:center">Время вышло. Попробуйте ещё раз.</p>'; return; }
+      try {
+        const s = await api('GET', '/api/auth/tg/status?code=' + encodeURIComponent(r.code));
+        if (s.status === 'ok') { clearInterval(timer); await boot(); }
+        else if (s.status === 'denied') { clearInterval(timer); box.innerHTML = '<p class="small" style="text-align:center">Вход отменён в боте.</p>'; }
+        else if (s.status === 'expired') { clearInterval(timer); box.innerHTML = '<p class="small" style="text-align:center">Код устарел. Попробуйте ещё раз.</p>'; }
+      } catch (er) { clearInterval(timer); msg(box, er.message); }
+    }, 2000);
+  } catch (er) { msg(box, er.message); }
+}
+// кнопка «Войти через Telegram» показывается, только если бот запущен на сервере
+function loadTgLogin() {
+  api('GET', '/api/auth/tg/config').then(c => {
+    const box = document.getElementById('tgbox');
+    if (!c.enabled || !box) return;
+    box.innerHTML = '<div class="muted small" style="text-align:center;margin:10px 0 6px">или</div><button type="button" class="btn" id="tgbtn" style="width:100%">Войти через Telegram</button><div id="tgmsg" style="margin-top:8px"></div>';
+    document.getElementById('tgbtn').onclick = () => tgLogin(document.getElementById('tgmsg'));
+  }).catch(() => { /* бот недоступен: остаётся вход по паролю */ });
+}
+// ссылка привязки: открывается в Telegram на телефоне сотрудника
+function tgLinkMsg(el, link) {
+  el.innerHTML = `<div class="msg ok" role="status">Откройте ссылку в Telegram на телефоне этого сотрудника. Она действует 10 минут:<br><a href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a></div>`;
+}
+// блок в профиле: привязать или отвязать свой Telegram
+function wireTg(el, linked, id) {
+  el.innerHTML = `<div><h2>Вход через Telegram</h2><p class="muted small" style="margin:4px 0 10px">${linked
+    ? 'Telegram привязан. Вход на сайт можно подтверждать в боте. Пароль тоже остаётся.'
+    : 'Необязательно. Если привязать Telegram, вход на сайт можно подтверждать в боте. Пароль при этом остаётся.'}</p></div>
+    <button class="btn sm ${linked ? 'danger' : 'primary'}" type="button" id="tgAct">${linked ? 'Отвязать Telegram' : 'Привязать Telegram'}</button><div id="tgMsg" style="margin-top:10px"></div>`;
+  const out = el.querySelector('#tgMsg');
+  el.querySelector('#tgAct').onclick = async () => {
+    try {
+      if (linked) { await api('POST', `/api/admin/users/${id}/tg-unlink`, {}); }
+      else { const r = await api('POST', `/api/admin/users/${id}/tg-link`, {}); tgLinkMsg(out, r.link); return; }
+      me = await api('GET', '/api/auth/me'); render();
+    } catch (er) { msg(out, er.message); }
+  };
+}
+
 // ---------- экран входа ----------
 function renderLogin() {
   $app.innerHTML = `<div class="login"><form class="login-card" id="lf">
@@ -61,7 +111,9 @@ function renderLogin() {
     <label class="f">Логин<input type="text" id="lg" autocomplete="username" autocapitalize="none" required autofocus></label>
     <label class="f">Пароль<input type="password" id="pw" autocomplete="current-password" required></label>
     <div id="lm"></div>
-    <button class="btn primary" type="submit">Войти</button></form></div>`;
+    <button class="btn primary" type="submit">Войти</button>
+    <div id="tgbox"></div></form></div>`;
+  loadTgLogin();
   document.getElementById('lf').onsubmit = async e => {
     e.preventDefault();
     const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -368,7 +420,7 @@ async function viewUsers() {
       <td><select data-f="role">${roleOpts(u.role)}</select></td>
       <td>${u.active ? '<span class="pill ok">активен</span>' : '<span class="pill off">отключён</span>'}${u.must_change ? ' <span class="pill off">пароль не сменён</span>' : ''}</td>
       <td class="num">${fmtDT(u.last_login)}</td>
-      <td style="white-space:nowrap"><button class="btn sm" data-a="reset">Сбросить пароль</button> <button class="btn sm ${u.active ? 'danger' : ''}" data-a="toggle">${u.active ? 'Отключить' : 'Включить'}</button></td></tr>`).join('')}
+      <td style="white-space:nowrap"><button class="btn sm" data-a="tg">${u.tg ? 'Отвязать Telegram' : 'Привязать Telegram'}</button> <button class="btn sm" data-a="reset">Сбросить пароль</button> <button class="btn sm ${u.active ? 'danger' : ''}" data-a="toggle">${u.active ? 'Отключить' : 'Включить'}</button></td></tr>`).join('')}
     </tbody></table></div><div id="um" style="margin-top:10px"></div></div>`);
   const showTemp = (el, who, pw) => { el.innerHTML = `<div class="msg ok">Временный пароль для <b>${esc(who)}</b>: <span class="temp">${esc(pw)}</span><br><span class="small">Покажите его сотруднику сейчас: потом он не отображается. При входе пароль придётся заменить.</span></div>`; };
   document.getElementById('nu').onsubmit = async e => {
@@ -383,6 +435,9 @@ async function viewUsers() {
       if (b.dataset.a === 'reset') {
         if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно сбросить?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Сбросить пароль'; }, 4000); return; }
         const r = await api('PATCH', '/api/admin/users/' + id, { reset_password: true }); showTemp(um, tr.querySelector('.muted').textContent, r.temp_password);
+      } else if (b.dataset.a === 'tg') {
+        if (b.textContent.includes('Отвязать')) { await api('POST', '/api/admin/users/' + id + '/tg-unlink', {}); render(); }
+        else { const r = await api('POST', '/api/admin/users/' + id + '/tg-link', {}); tgLinkMsg(um, r.link); }
       } else { const active = b.textContent.trim() === 'Включить'; await api('PATCH', '/api/admin/users/' + id, { active }); render(); }
     } catch (er) { msg(um, er.message); }
   };
@@ -505,7 +560,9 @@ function viewProfile() {
   const p = renderPasswordForm(false);
   const cur = getTheme();
   shell('Мой профиль', `<div class="card screen-theme"><div><h2>Тема админки</h2><p class="muted small" style="margin:4px 0 0">Запоминается на этом устройстве. «Системная» — как настроено на телефоне или компьютере</p></div>
-    <div class="seg seg-wide" id="pTheme">${THEMES.map(([v, l]) => `<button type="button" data-pt="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div></div>` + p.form);
+    <div class="seg seg-wide" id="pTheme">${THEMES.map(([v, l]) => `<button type="button" data-pt="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div></div>
+    <div class="card" id="tgCard"></div>` + p.form);
+  wireTg(document.getElementById('tgCard'), !!me.tg, me.id);
   document.querySelectorAll('#pTheme [data-pt]').forEach(b => b.onclick = () => {
     setTheme(b.dataset.pt);
     document.querySelectorAll('#pTheme [data-pt]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));

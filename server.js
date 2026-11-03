@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const S = require('./lib/sync');
 const SC = require('./lib/schedule');
 const A = require('./lib/auth');
+const TGB = require('./lib/tgbot');
 const { db, DATA, getSetting, setSetting, allSettings, audit } = require('./lib/db');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -415,7 +416,7 @@ async function adminApi(req, res, p, url, user) {
   // --- пользователи ---
   if (p === '/api/admin/users' && m === 'GET') {
     if (!need('users')) return;
-    return json(res, 200, { roles: A.ROLES, users: db.prepare('SELECT id,login,name,role,active,must_change,created_at,last_login FROM users ORDER BY id').all() });
+    return json(res, 200, { roles: A.ROLES, users: db.prepare('SELECT id,login,name,role,active,must_change,created_at,last_login,(tg_id IS NOT NULL) AS tg FROM users ORDER BY id').all() });
   }
   if (p === '/api/admin/users' && m === 'POST') {
     if (!need('users')) return;
@@ -431,6 +432,23 @@ async function adminApi(req, res, p, url, user) {
     const r = db.prepare('INSERT INTO users(login,name,role,pass_hash,must_change,created_at) VALUES(?,?,?,?,1,?)').run(login, name, b.role, A.hashPassword(pw), Date.now());
     audit({ user, action: 'user_created', target: login, now: `${name}, ${roleLabel(b.role)}` });
     return json(res, 201, { id: Number(r.lastInsertRowid), login, temp_password: pw });
+  }
+  // Telegram: привязка и отвязка. Себя может привязать любой; других — только тот, кто управляет пользователями
+  const tm = /^\/api\/admin\/users\/(\d+)\/tg-(link|unlink)$/.exec(p);
+  if (tm && m === 'POST') {
+    const id = Number(tm[1]);
+    const target = db.prepare('SELECT id,login,name FROM users WHERE id=?').get(id);
+    if (!target) return fail(res, 404, 'Пользователь не найден');
+    if (target.id !== user.id && !need('users')) return;
+    if (tm[2] === 'unlink') {
+      db.prepare('UPDATE users SET tg_id=NULL WHERE id=?').run(id);
+      audit({ user, action: 'tg_unlinked', target: target.login });
+      return json(res, 200, { ok: true });
+    }
+    if (!TGB.state.running) return fail(res, 503, 'Telegram-бот не настроен');
+    const raw = TGB.newCode('link', id, ip(req));
+    audit({ user, action: 'tg_link_created', target: target.login });
+    return json(res, 200, { link: TGB.linkUrl(raw), expires_in: 600 });
   }
   const um = /^\/api\/admin\/users\/(\d+)$/.exec(p);
   if (um && m === 'PATCH') {
@@ -586,6 +604,29 @@ const server = http.createServer(async (req, res) => {
     }
 
     // вход / выход
+    // вход через Telegram: сайт создаёт код, пользователь подтверждает в боте, сайт ждёт подтверждения
+    if (p === '/api/auth/tg/config' && req.method === 'GET') return json(res, 200, { enabled: TGB.state.running, username: TGB.state.username });
+    if (p === '/api/auth/tg/start' && req.method === 'POST') {
+      if (!TGB.state.running) return fail(res, 503, 'Вход через Telegram не настроен');
+      const a = ip(req);
+      const recent = db.prepare("SELECT COUNT(*) c FROM tg_codes WHERE kind='login' AND ip=? AND created_at>?").get(a, Date.now() - 10 * 60e3).c;
+      if (recent >= 10) return fail(res, 429, 'Слишком много попыток. Попробуйте через 10 минут.');
+      const raw = TGB.newCode('login', null, a);
+      return json(res, 200, { code: raw, link: TGB.loginUrl(raw), expires_in: 120 });
+    }
+    if (p === '/api/auth/tg/status' && req.method === 'GET') {
+      const raw = url.searchParams.get('code') || '';
+      const row = TGB.findCode(raw, 'login');
+      if (!row) return json(res, 200, { status: 'expired' });
+      if (row.status === 'new' || row.status === 'waiting') return json(res, 200, { status: 'pending' });
+      TGB.dropCode(row.code_hash); // код одноразовый: после ответа он больше не нужен
+      if (row.status === 'denied') return json(res, 200, { status: 'denied' });
+      const u = db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(row.user_id);
+      if (!u) return json(res, 200, { status: 'expired' });
+      db.prepare('UPDATE users SET last_login=? WHERE id=?').run(Date.now(), u.id);
+      audit({ user: u, action: 'login_tg', target: u.login, details: ip(req) });
+      return json(res, 200, { status: 'ok', must_change: !!u.must_change }, { 'Set-Cookie': A.cookieHeader(A.createSession(u.id, ip(req)), isHttps(req)) });
+    }
     if (p === '/api/auth/login' && req.method === 'POST') {
       const b = await readJSON(req);
       const r = A.login(String(b.login || ''), String(b.password || ''), ip(req));
@@ -655,4 +696,5 @@ const server = http.createServer(async (req, res) => {
     db.prepare('DELETE FROM screens WHERE token_hash IS NULL AND last_seen < ?').run(Date.now() - SCREEN_TTL);
   }, 3600e3);
   server.listen(PORT, HOST, () => console.log(`Панель: http://localhost:${PORT}/  (ТВ: /tv, админка: /admin)${sharp ? ', сжатие картинок включено' : ''}`));
+  TGB.start().catch(e => console.error('[tg] не запущен:', e.message));
 })();
