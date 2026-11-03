@@ -67,17 +67,20 @@ const ip = req => {
   return sock;
 };
 const isHttps = req => req.headers['x-forwarded-proto'] === 'https';
+const FIRST_PW_FILE = path.join(DATA, 'first-admin-password.txt');
 const SCREEN_TTL = 14 * 864e5; // экран без связи 14 дней (и без имени) забываем
 // строгая политика для страниц: скрипты только со своего сайта, встроенных скриптов нет
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'self'";
-// ограничение частоты «экран на связи»: не больше 120 запросов в минуту с одного адреса (школа — много экранов за одним адресом)
+// ограничение частоты запросов за минуту. Ключ — адрес или id экрана (школа: много экранов за одним адресом,
+// поэтому «экран на связи» считаем по самому экрану, а по адресу ставим общий предел повыше)
 const pingHits = new Map();
-function pingAllowed(addr) {
+function pingAllowed(key, limit = 120) {
   if (pingHits.size > 5000) pingHits.clear();
-  const now = Date.now(), hits = (pingHits.get(addr) || []).filter(t => now - t < 60e3);
-  if (hits.length >= 120) { pingHits.set(addr, hits); return false; }
-  hits.push(now); pingHits.set(addr, hits); return true;
+  const now = Date.now(), hits = (pingHits.get(key) || []).filter(t => now - t < 60e3);
+  if (hits.length >= limit) { pingHits.set(key, hits); return false; }
+  hits.push(now); pingHits.set(key, hits); return true;
 }
+const PING_PER_SCREEN = 20, PING_PER_ADDR = 600; // экран шлёт ~4 запроса в минуту
 // ---- привязка экрана: код на телевизоре → подтверждение в админке → секретная cookie на телевизоре ----
 // ожидающие привязки живут в памяти 10 минут; секрет хранится в базе только как хэш
 const pairByCode = new Map(), pairByScreen = new Map();
@@ -571,7 +574,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/ping' && req.method === 'POST') { // привязанный экран сообщает, что он жив; без привязки не считается
       const id = screenIdFromReq(req);
       if (!id) return fail(res, 401, 'Нужна привязка экрана');
-      if (!pingAllowed(ip(req))) return fail(res, 429, 'Слишком часто');
+      if (!pingAllowed('s:' + id, PING_PER_SCREEN) || !pingAllowed('a:' + ip(req), PING_PER_ADDR)) return fail(res, 429, 'Слишком часто');
       const b = await readJSON(req), now = Date.now();
       db.prepare('UPDATE screens SET last_seen=?, ip=?, ua=?, version=? WHERE id=?')
         .run(now, ip(req), String(req.headers['user-agent'] || '').slice(0, 160), String(b.version || '').slice(0, 20), id);
@@ -595,6 +598,7 @@ const server = http.createServer(async (req, res) => {
       if (!user) return fail(res, 401, 'Нужно войти');
       if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'sb') return fail(res, 403, 'Запрос отклонён');
       if (p === '/api/auth/logout' && req.method === 'POST') { audit({ user, action: 'logout', target: user.login }); A.destroySession(req); return json(res, 200, { ok: true }, { 'Set-Cookie': A.clearCookie() }); }
+      if (p === '/api/auth/logout-all' && req.method === 'POST') { audit({ user, action: 'logout_all', target: user.login }); A.destroyAllSessions(user.id); return json(res, 200, { ok: true }, { 'Set-Cookie': A.clearCookie() }); }
       if (p === '/api/auth/password' && req.method === 'POST') {
         const b = await readJSON(req);
         const row = db.prepare('SELECT * FROM users WHERE id=?').get(user.id);
@@ -604,6 +608,7 @@ const server = http.createServer(async (req, res) => {
         db.prepare('UPDATE users SET pass_hash=?, must_change=0 WHERE id=?').run(A.hashPassword(String(b.new)), user.id);
         A.destroyOtherSessions(user.id, req); // остальные входы с паролем, который поменяли, закрываем
         audit({ user, action: 'password_changed', target: user.login });
+        if (user.login === 'director') { try { fs.unlinkSync(FIRST_PW_FILE); } catch { /* файла нет — хорошо */ } } // временный пароль больше не нужен
         return json(res, 200, { ok: true });
       }
       if (p.startsWith('/api/admin/')) return await adminApi(req, res, p, url, user);
@@ -625,10 +630,21 @@ const server = http.createServer(async (req, res) => {
 (async () => {
   const first = A.ensureFirstUser();
   if (first) {
+    // Пароль не печатаем в консоль и журнал службы (journalctl хранит его надолго): кладём в файл с правами 0600.
+    // Файл удаляется сам, когда директор меняет пароль при первом входе.
+    let where = '';
+    if (!process.env.INITIAL_ADMIN_PASSWORD) {
+      try {
+        fs.writeFileSync(FIRST_PW_FILE, `логин: ${first.login}\nпароль: ${first.password}\n`, { mode: 0o600 });
+        where = FIRST_PW_FILE;
+      } catch (e) { console.error('[server] не удалось записать файл с паролем:', e.message); }
+    }
     console.log('\n==============================================================');
-    console.log(' Создан первый пользователь для входа в админку (/admin):');
-    console.log(`   логин: ${first.login}\n   пароль: ${first.password}`);
-    console.log(' Пароль нужно будет сменить при первом входе. Запишите его сейчас.');
+    console.log(' Создан первый пользователь для входа в админку (/admin): логин ' + first.login);
+    if (process.env.INITIAL_ADMIN_PASSWORD) console.log(' Пароль — тот, что задан в INITIAL_ADMIN_PASSWORD.');
+    else if (where) console.log(` Временный пароль записан в файл:\n   ${where}\n После смены пароля файл удалится сам.`);
+    else console.log(' Пароль получить не удалось: выполните scripts/reset-password.js director');
+    console.log(' Пароль нужно будет сменить при первом входе.');
     console.log('==============================================================\n');
   }
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());

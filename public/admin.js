@@ -41,7 +41,7 @@ const msg = (el, text, kind = 'err') => { el.innerHTML = text ? `<div class="msg
 
 const ACTIONS = {
   screen_paired: 'Экран привязан', screen_unpaired: 'Экран отвязан',
-  login: 'Вход', login_failed: 'Неудачный вход', logout: 'Выход', password_changed: 'Смена пароля', password_reset: 'Сброс пароля',
+  login: 'Вход', login_failed: 'Неудачный вход', logout: 'Выход', logout_all: 'Выход на всех устройствах', password_changed: 'Смена пароля', password_reset: 'Сброс пароля',
   user_created: 'Создан пользователь', user_role_changed: 'Изменена роль', user_renamed: 'Изменено имя', user_enabled: 'Пользователь включён', user_disabled: 'Пользователь отключён',
   settings_changed: 'Изменена настройка', media_uploaded: 'Загружен файл', media_updated: 'Изменён файл', media_deleted: 'Удалён файл', media_reordered: 'Изменён порядок файлов',
   sync_manual: 'Ручная синхронизация', screens_refresh: 'Обновление всех экранов', screen_renamed: 'Переименован экран', first_user: 'Создан первый пользователь',
@@ -124,6 +124,7 @@ function shell(title, bodyHtml, actionsHtml = '') {
         <div class="seg-label" id="themeLbl">Тема</div>
         <div class="seg" role="group" aria-labelledby="themeLbl">${THEMES.map(([v, l]) => `<button type="button" data-theme-set="${v}" aria-pressed="${getTheme() === v}">${l}</button>`).join('')}</div>
         <button role="menuitem" type="button" id="lo">Выйти</button>
+        <button role="menuitem" type="button" id="loAll">Выйти на всех устройствах</button>
       </div>
     </div>
   </aside><main class="main"><header><h1>${esc(title)}</h1><div class="row">${actionsHtml}</div></header><div id="view">${sysNav}${bodyHtml}</div></main></div>`;
@@ -134,6 +135,10 @@ function shell(title, bodyHtml, actionsHtml = '') {
     menu.querySelectorAll('[data-theme-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   });
   document.getElementById('lo').onclick = async () => { try { await api('POST', '/api/auth/logout'); } catch {} me = null; render(); };
+  document.getElementById('loAll').onclick = async () => {
+    if (!confirm('Выйти на всех устройствах, где вы входили в админку? Придётся войти заново.')) return;
+    try { await api('POST', '/api/auth/logout-all'); } catch {} me = null; render();
+  };
 }
 
 // ---------- обзор ----------
@@ -575,7 +580,7 @@ async function viewSchedule() {
   // просмотр: уроки класса на дату с учётом замен этой даты (как на экранах)
   const [sch, subsAll] = await Promise.all([api('GET', '/api/admin/schedule'), api('GET', '/api/admin/subs')]);
   const cSel = document.getElementById('vc'), dSel = document.getElementById('vd'), vBox = document.getElementById('viewBox');
-  dSel.value = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10); // сегодня по Москве
+  dSel.value = todayMsk(); // сегодня по Москве
   cSel.innerHTML = sch.classes.map(c => `<option>${esc(c)}</option>`).join('');
   // звонок, который относится к параллели класса (по диапазону классов в листе «Звонки»)
   const bellFor = (n, cls) => {
@@ -619,7 +624,7 @@ async function viewSubs() {
     const g = groups.get(k); g.ids.push(r.id); g.cls.push(r.cls);
   }
   const list = [...groups.values()];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayMsk();
   shell('Замены', `
     <div class="card" id="fileCard"><h2>Файл замен от завуча</h2>
       <p class="muted small" style="margin-top:0">Файл Excel (.xlsx), лист «Замены» или первый лист. Колонки: Урок, Класс, Предмет, Кабинет, Ответственный учитель, Отсутствует, Примечание. Дата — в строке заголовка блока (например «Замена кабинетов на 17.10.2026»). Номер урока «1-6» или «1, 3» сопоставляется с классами по порядку. «8аб» — один урок для 8А и 8Б. Перед записью показываем проверку. Записываются только даты из файла: замены этих дат, загруженные из файла раньше, заменяются; ручные остаются.</p>
@@ -967,13 +972,17 @@ let pendingPair = '';
   const qp = new URLSearchParams(location.search).get('pair');
   if (qp) { pendingPair = qp.replace(/\D/g, '').slice(0, 6); history.replaceState(null, '', '/admin'); }
 }
+// сегодняшняя дата по Москве (не по часовому поясу компьютера и не по UTC)
+function todayMsk() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(new Date()); }
+let meTimer = null;
 async function boot() {
   try { const st = await (await fetch('/api/state')).json(); brand = { logo: st.logo || '', school: st.schoolName || '' }; } catch { /* нет связи */ }
   try { me = await api('GET', '/api/auth/me'); } catch { me = null; }
   const r = readHash(); view = r.v; sub = r.s;
   render();
   // права и вход проверяем раз в минуту: если роль сменили или вход закрыли, страница обновится сама
-  setInterval(async () => {
+  clearInterval(meTimer); // boot() вызывается и после входа, и после смены пароля: таймер должен быть один
+  meTimer = setInterval(async () => {
     if (!me) return;
     try {
       const n = await api('GET', '/api/auth/me');

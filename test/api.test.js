@@ -39,6 +39,8 @@ class Client {
     rr = await tv.req('POST', '/api/pair/claim', { id: 'tvtest-01' }); ok(rr.j.status === 'ok' && tv.cookie.startsWith('sb_screen='), 'телевизор получил cookie');
     rr = await tv.req('GET', '/api/state'); ok(rr.s === 200, 'привязанный экран получает данные');
     rr = await tv.req('POST', '/api/ping', { version: 't' }); ok(rr.s === 200, 'привязанный экран засчитывается');
+    { let last429 = false; for (let i = 0; i < 25; i++) { const x = await tv.req('POST', '/api/ping', { version: 't' }); if (x.s === 429) last429 = true; }
+      ok(last429, 'слишком частые пинги одного экрана ограничиваются'); }
     const list = await d.req('GET', '/api/admin/screens'); ok(list.j.some(x => x.name === 'Холл тест') && list.j.every(x => !('token_hash' in x)), 'экран виден в админке, секрет не отдаётся');
     rr = await d.req('POST', '/api/admin/screens/tvtest-01/unpair'); ok(rr.s === 200, 'экран отвязан');
     rr = await tv.req('GET', '/api/state'); ok(rr.s === 401, 'после отвязки данных нет');
@@ -264,6 +266,13 @@ class Client {
   st = await stateJ(); ok(!st.bells.some(b => b.cancelled), 'после удаления урок снова идёт');
   }
 
+  // «выйти на всех устройствах»: вторая сессия того же директора тоже закрывается
+  { const d2 = new Client(); r = await d2.req('POST', '/api/auth/login', { login: 'director', password: NEWPW }); ok(r.s === 200, 'вторая сессия директора открыта');
+    r = await d2.req('GET', '/api/admin/overview'); ok(r.s === 200, 'вторая сессия работает');
+    r = await d.req('POST', '/api/auth/logout-all'); ok(r.s === 200, 'выход на всех устройствах выполнен');
+    r = await d2.req('GET', '/api/admin/overview'); ok(r.s === 401, 'вторая сессия закрыта');
+    r = await d.req('GET', '/api/admin/overview'); ok(r.s === 401, 'текущая сессия тоже закрыта');
+    r = await d.req('POST', '/api/auth/login', { login: 'director', password: NEWPW }); ok(r.s === 200, 'после выхода везде вход работает заново'); }
   // выход
   r = await d.req('POST', '/api/auth/logout'); r = await d.req('GET', '/api/admin/overview'); ok(r.s === 401, 'после выхода доступ закрыт');
   // блокировка перебора

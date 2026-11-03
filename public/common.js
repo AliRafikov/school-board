@@ -43,6 +43,8 @@ function schoolNow(tz) {
 function currentSlot(bells, now) {
   bells = bells.filter(b => !b.meal); // завтрак и обед — не уроки
   if (now.day === 6 || !bells.length) return { phase: 'off' };
+  bells = bells.filter(b => !b.cancelled); // отменённый урок не идёт и не ждётся
+  if (!bells.length) return { phase: 'after' };
   const t = now.seconds, S = b => toMin(b.start) * 60, E = b => toMin(b.end) * 60;
   const active = bells.filter(b => t >= S(b) && t < E(b));
   if (active.length) return { phase: 'lesson', left: Math.min(...active.map(E)) - t, n: active[0].n };

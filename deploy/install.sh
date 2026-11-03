@@ -145,10 +145,11 @@ cat <<EOF
    Страница учеников: https://$DOMAIN_ARG/
    Админка:          https://$DOMAIN_ARG/admin
 EOF
-PW="$(journalctl -u school-board --no-pager 2>/dev/null | grep -A1 'логин: director' | grep -o 'пароль: .*' | tail -1 || true)"
-if [ -n "$PW" ]; then
-  echo "   Первый вход:      логин: director   $PW"
-  echo "   (пароль нужно будет сменить при первом входе — запишите его сейчас)"
+# пароль первого директора лежит в файле (0600), а не в журнале службы; файл удалится после смены пароля
+PWF="$DATA/first-admin-password.txt"
+if [ -f "$PWF" ]; then
+  echo "   Первый вход:      логин: director   $(grep -o 'пароль: .*' "$PWF" | head -1)"
+  echo "   (пароль нужно будет сменить при первом входе; файл $PWF удалится сам)"
 else
   echo "   Вход в админку: используйте существующий логин и пароль."
 fi

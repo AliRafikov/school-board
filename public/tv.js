@@ -23,7 +23,7 @@ function tick() {
   $('nowLabel').textContent = L;
   $('nowCount').textContent = slot.left != null ? fmtLeft(slot.left) : '';
   $('fsNow').textContent = slot.left != null ? ' · ' + ({ lesson: 'до звонка ', break: 'перемена ', before: 'до уроков ' }[slot.phase] || '') + fmtLeft(slot.left) : '';
-  document.querySelectorAll('#bells .bl').forEach(el => { el.classList.toggle('now', now.day < 6 && now.minutes >= toMin(el.dataset.s) && now.minutes < toMin(el.dataset.e)); });
+  document.querySelectorAll('#bells .bl').forEach(el => { el.classList.toggle('now', now.day < 6 && !el.classList.contains('off') && now.minutes >= toMin(el.dataset.s) && now.minutes < toMin(el.dataset.e)); });
   // в 04:00 перезагружаем страницу — защита от утечек памяти за недели работы
   if (now.h === 4 && now.m === 0 && now.s < 2 && !window.__reloaded) { window.__reloaded = 1; location.reload(); }
 }
@@ -123,7 +123,7 @@ function renderClasses() {
       return `<div class="col" style="grid-template-rows:auto 1fr"><div class="cn">${esc(c)}</div><div class="ls" style="grid-template-rows:repeat(${maxN},minmax(0,1fr))">` +
         ns.map(n => {
           const l = by[n];
-          if (cancelledN.has(n) || (l && l.cancelled)) return '<div class="c chg"></div>';
+          if (cancelledN.has(n) || (l && l.cancelled)) return '<div class="c chg off"><span>отменён</span></div>';
           if (!l) return '<div class="c"></div>';
           const sr = splitRoom(l.subject, l.room), nm = subjName(sr.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
           const sur = t => esc(String(t || '').split(' ')[0]);

@@ -73,6 +73,7 @@ body.no-bells .mid { grid-template-columns: 14vw 1fr 0; }
 .pdots i { width:.6vw; height:.6vw; border-radius:50%; background:#c6c8cf; } .pdots i.on { background:var(--red); }
 
 .c.chg { font-weight:800; }
+.c.off { justify-content:center; font-weight:600; opacity:.85; }
 .c.chg span { display:flex; flex-direction:column; line-height:1.05; }
 .c.chg em { display:block; font-style:normal; font-size:.7em; font-weight:600; line-height:1.1; color:var(--red); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .c.chg s { font-size:1.2em; line-height:1.1; font-weight:500; color:#9a6a70; text-decoration:line-through; text-decoration-thickness:.1vw; }
