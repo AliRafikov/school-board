@@ -51,3 +51,4 @@ const uid = db.prepare("SELECT id FROM users WHERE login='ivanova'").get().id;
   ok(A.login('ivanova', 'Pass12345', '1.1.1.1').token !== undefined, 'вход по паролю не сломан');
   console.log(process.exitCode ? 'ЕСТЬ ОШИБКИ' : 'ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');
 })();
+
