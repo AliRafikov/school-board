@@ -52,3 +52,16 @@ const buttons = b => (b && b.inline_keyboard ? b.inline_keyboard.flat().map(x =>
   console.log(fails ? 'ЕСТЬ ОШИБКИ' : 'ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');
   process.exitCode = fails ? 1 : 0;
 })();
+
+// отдельная проверка: кнопка «Убрать зелёный отбой» уводит отбой с экранов
+(async () => {
+  await new Promise(r => setTimeout(r, 1500));
+  const { setSetting } = require('../lib/db');
+  setSetting('clear_until', String(Date.now() + 5 * 60e3));
+  setSetting('clear_title', 'Отбой тест');
+  await TGB.onCallback(cb('hc', '901'));
+  ok(Number(getSetting('clear_until')) === 0, 'зелёный отбой убран с экранов из бота');
+  ok(db.prepare("SELECT COUNT(*) c FROM audit WHERE action='clear_hidden' AND source='telegram'").get().c === 1, 'скрытие отбоя записано в журнал');
+  console.log(fails ? 'ЕСТЬ ОШИБКИ' : 'ДОПОЛНИТЕЛЬНО: ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');
+  process.exitCode = fails ? 1 : 0;
+})();
