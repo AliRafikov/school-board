@@ -131,11 +131,8 @@ const mediaRow = m => ({ id: m.id, kind: m.kind, title: m.title, url: '/media/' 
 const PLACES = ['screen', 'center', 'banner'];
 const validDate = d => d === '' || /^\d{4}-\d{2}-\d{2}$/.test(d);
 // Готовые срочные варианты: один клик — и сообщение на экранах. Текст инструкции можно поправить здесь.
-const URGENT_PRESETS = [
-  { id: 'missile', title: 'Ракетная опасность', end: 'Отбой ракетной опасности', source: 'МЧС России', note: 'Пройдите в укрытие. Следуйте указаниям учителей и администрации.' },
-  { id: 'drone', title: 'Угроза атаки БПЛА', end: 'Отбой угрозы атаки БПЛА', source: 'МЧС России', note: 'Пройдите в укрытие. Следуйте указаниям учителей и администрации.' },
-  { id: 'air', title: 'Воздушная тревога: всем в укрытие', end: 'Отбой воздушной тревоги', source: 'МЧС России', note: 'Следуйте указаниям учителей и администрации.' },
-];
+const URG = require('./lib/urgent');
+const URGENT_PRESETS = URG.PRESETS;
 const clampInt = (v, lo, hi, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
 const roleLabel = r => A.ROLES[r] || r;
 
@@ -341,28 +338,8 @@ async function adminApi(req, res, p, url, user) {
     }
     if (m === 'PUT') {
       const b = await readJSON(req);
-      const prev = getSetting('urgent_title') || '';
-      if (b.hide_clear) {
-        // убираем зелёный отбой с экранов сразу, не дожидаясь пяти минут
-        const until = Number(getSetting('clear_until')) || 0;
-        if (until > Date.now()) {
-          setSetting('clear_until', '0');
-          audit({ user, action: 'clear_hidden', target: getSetting('clear_title') || 'отбой' });
-          S.bump();
-        }
-        return json(res, 200, { ok: true, active: false });
-      }
-      if (!b.preset && !String(b.title || '').trim()) {
-        const prevSource = getSetting('urgent_source') || '';
-        if (prev) {
-          const low = prev.charAt(0).toLowerCase() + prev.slice(1);
-          const t = Date.now();
-          setSetting('clear_title', getSetting('urgent_end') || ('Отбой: ' + low)); setSetting('clear_source', prevSource); setSetting('clear_since', String(t)); setSetting('clear_until', String(t + 5 * 60e3));
-        }
-        setSetting('urgent_title', ''); setSetting('urgent_since', '0');
-        audit({ user, action: 'urgent_stopped', target: prev });
-        S.bump(); return json(res, 200, { ok: true, active: false });
-      }
+      if (b.hide_clear) return json(res, 200, URG.hideClear(user));
+      if (!b.preset && !String(b.title || '').trim()) return json(res, 200, URG.stop(user));
       let item;
       if (b.preset) {
         item = URGENT_PRESETS.find(x => x.id === String(b.preset)); if (!item) return fail(res, 400, 'Неизвестный вариант');
@@ -370,11 +347,7 @@ async function adminApi(req, res, p, url, user) {
         if (b.confirmed !== true) return fail(res, 400, 'Нужно второе подтверждение отправки');
       }
       else item = { title: String(b.title).trim().slice(0, 120), source: String(b.source || '').trim().slice(0, 80), note: String(b.note || '').trim().slice(0, 200) };
-      setSetting('urgent_end', item.end || '');
-      const since = Date.now();
-      setSetting('urgent_title', item.title); setSetting('urgent_source', item.source); setSetting('urgent_note', item.note); setSetting('urgent_since', String(since));
-      audit({ user, action: 'urgent_started', target: item.title, details: item.source || '' });
-      S.bump(); return json(res, 200, { ok: true, active: true, since });
+      return json(res, 200, URG.start(item, user));
     }
   }
   if (p === '/api/admin/settings') {
