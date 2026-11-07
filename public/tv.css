@@ -72,7 +72,10 @@ body.no-bells .mid { grid-template-columns: 14vw 1fr 0; }
 .classes { position:relative; }
 .pdots i { width:.6vw; height:.6vw; border-radius:50%; background:#c6c8cf; } .pdots i.on { background:var(--red); }
 
-.c.chg { font-weight:800; }
+.c.chg { font-weight:800; box-shadow:inset .35vw 0 0 var(--red); }
+/* замена должна читаться с другого конца холла: кабинет — плашкой, новый учитель — крупнее */
+.c.chg b { background:var(--red); color:#fff; border-radius:.5vw; padding:0 .45vw; }
+.c.chg em { font-size:.78em; font-weight:800; }
 .c.off { justify-content:center; font-weight:600; opacity:.85; }
 .c.chg span { display:flex; flex-direction:column; line-height:1.05; }
 .c.chg em { display:block; font-style:normal; font-size:.7em; font-weight:600; line-height:1.1; color:var(--red); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
