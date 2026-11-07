@@ -52,6 +52,26 @@ class Client {
   const itPw = r.j.temp_password;
   r = await d.req('POST', '/api/admin/users', { login: 'zav', name: 'Завуч', role: 'zavuch' }); const zavPw = r.j.temp_password; ok(r.s === 201, 'создан завуч');
   r = await d.req('POST', '/api/admin/users', { login: 'zav', name: 'Дубль', role: 'viewer' }); ok(r.s === 409, 'дубликат логина отклонён');
+  {
+    // помощник (старшеклассник): публикует объявления и постеры, но не тревогу, не замены и не расписание
+    r = await d.req('POST', '/api/admin/users', { login: 'helper1', name: 'Помощник', role: 'helper' }); ok(r.s === 201 && r.j.temp_password, 'создан помощник');
+    const hp = r.j.temp_password, h = new Client();
+    r = await h.req('POST', '/api/auth/login', { login: 'helper1', password: hp }); ok(r.s === 200, 'вход помощника');
+    r = await h.req('POST', '/api/auth/password', { old: hp, new: 'Helper-secure-1' }); ok(r.s === 200, 'помощник сменил пароль');
+    r = await h.req('GET', '/api/auth/me'); ok(r.j.can.media && r.j.can.announcements && !r.j.can.urgent && !r.j.can.subs && !r.j.can.schedule && !r.j.can.users, 'права помощника: только объявления и постеры');
+    r = await h.req('POST', '/api/admin/announcements', { title: 'Собрание в четверг', duration: 10, priority: 1 }); ok(r.s === 201, 'помощник публикует объявление');
+    const hpng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    r = await h.req('POST', '/api/admin/media/upload', hpng, { 'X-File-Name': encodeURIComponent('Афиша.png'), 'Content-Type': 'application/octet-stream' }); ok(r.s === 201, 'помощник загружает постер');
+    const hid = r.j && r.j.id;
+    r = await h.req('PUT', '/api/admin/urgent', { title: 'Тревога', confirmed: true }); ok(r.s === 403, 'помощнику нельзя включить срочное сообщение');
+    r = await h.req('GET', '/api/admin/urgent'); ok(r.s === 403, 'помощник не видит срочные сообщения');
+    r = await h.req('GET', '/api/admin/subs'); ok(r.s === 403, 'помощнику закрыты замены');
+    r = await h.req('POST', '/api/admin/subs', { date: '2026-11-09', lessons: '1', classes: '8А', teacher: 'Х' }); ok(r.s === 403, 'помощник не добавляет замены');
+    r = await h.req('GET', '/api/admin/schedule'); ok(r.s === 403, 'помощнику закрыто расписание');
+    r = await h.req('GET', '/api/admin/users'); ok(r.s === 403, 'помощнику закрыты пользователи');
+    r = await h.req('GET', '/api/admin/audit'); ok(r.s === 403, 'помощнику закрыт журнал');
+    r = await d.req('DELETE', '/api/admin/media/' + hid); ok(r.s === 200, 'директор убирает постер помощника');
+  }
   r = await d.req('POST', '/api/admin/users', { login: 'x', name: 'x', role: 'viewer' }); ok(r.s === 400, 'короткий логин отклонён');
 
   // завуч: может медиа, не может пользователей и настройки

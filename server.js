@@ -12,8 +12,7 @@ const { db, DATA, getSetting, setSetting, allSettings, audit } = require('./lib/
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';                       // на сервере: 127.0.0.1 (снаружи доступ только через Caddy)
 const PUBLIC = path.join(__dirname, 'public');
-const MAX_IMAGE = 15 * 1024 * 1024, MAX_VIDEO = 30 * 1024 * 1024, MAX_PDF = 30 * 1024 * 1024;
-let sharp = null; try { sharp = require('sharp'); } catch { /* сжатие картинок включится, если установить sharp */ }
+const M = require('./lib/media');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml',
@@ -108,27 +107,9 @@ const publicStateObj = () => {
 };
 
 // ---------- загрузка медиа ----------
-function sniff(buf) {
-  if (buf.length > 12 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { kind: 'image', ext: '.jpg' };
-  if (buf.length > 12 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { kind: 'image', ext: '.png' };
-  if (buf.slice(0, 5).toString() === '%PDF-') return { kind: 'pdf', ext: '.pdf' };
-  if (buf.length > 12 && buf.slice(4, 8).toString() === 'ftyp') return { kind: 'video', ext: '.mp4' };
-  return null;
-}
-async function compressImage(buf, ext) {
-  if (!sharp || buf.length <= 500 * 1024) return { buf, ext };
-  let q = 82, out = buf;
-  for (let i = 0; i < 5; i++) {
-    out = await sharp(buf).rotate().resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: q, mozjpeg: true }).toBuffer();
-    if (out.length <= 500 * 1024) break; q -= 12;
-  }
-  return { buf: out, ext: '.jpg' };
-}
-
 const mediaRow = m => ({ id: m.id, kind: m.kind, title: m.title, url: '/media/' + m.file, duration: m.duration, date_from: m.date_from, date_to: m.date_to,
   priority: m.priority, place: m.place || 'screen', break_only: !!m.break_only, active: !!m.active, size: m.size, created_by: m.created_by, created_at: m.created_at });
-
-const PLACES = ['screen', 'center', 'banner'];
+const PLACES = M.PLACES;
 const validDate = d => d === '' || /^\d{4}-\d{2}-\d{2}$/.test(d);
 // Готовые срочные варианты: один клик — и сообщение на экранах. Текст инструкции можно поправить здесь.
 const URG = require('./lib/urgent');
@@ -176,7 +157,7 @@ async function adminApi(req, res, p, url, user) {
     if (!need('audit')) return;
     const limit = clampInt(url.searchParams.get('limit'), 1, 200, 50), offset = clampInt(url.searchParams.get('offset'), 0, 1e6, 0);
     const where = [], args = [];
-    const src = url.searchParams.get('source'); if (['sheet', 'admin', 'system'].includes(src)) { where.push('source = ?'); args.push(src); }
+    const src = url.searchParams.get('source'); if (['sheet', 'admin', 'system', 'telegram'].includes(src)) { where.push('source = ?'); args.push(src); }
     const q = (url.searchParams.get('q') || '').trim(); if (q) { where.push('(target LIKE ? OR was LIKE ? OR now LIKE ? OR user_name LIKE ? OR action LIKE ?)'); const l = `%${q}%`; args.push(l, l, l, l, l); }
     if (url.searchParams.get('hide_logins') === '1') where.push("action NOT IN ('login','login_failed','logout')");
     const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
@@ -329,7 +310,7 @@ async function adminApi(req, res, p, url, user) {
     }
   }
   if (p === '/api/admin/urgent') {
-    if (!need('announcements')) return;
+    if (!need('urgent')) return;
     if (m === 'GET') {
       const title = getSetting('urgent_title') || '';
       const clearUntil = Number(getSetting('clear_until')) || 0;
@@ -351,12 +332,13 @@ async function adminApi(req, res, p, url, user) {
     }
   }
   if (p === '/api/admin/settings') {
-    const themeOnly = m === 'PUT' && !A.can(user, 'settings') && A.can(user, 'screens'); // завуч меняет только тему экрана
-    if (!themeOnly && !need('settings')) return;
+    // завуч меняет только тему экрана и каникулы; остальные настройки — директор и IT
+    const limited = !A.can(user, 'settings') && A.can(user, 'schedule');
+    if (!limited && !need('settings')) return;
     if (m === 'GET') return json(res, 200, allSettings());
     if (m === 'PUT') {
       const b = await readJSON(req), before = allSettings(), upd = {};
-      if (themeOnly && Object.keys(b).some(k => k !== 'theme')) return fail(res, 403, 'Недостаточно прав');
+      if (limited && Object.keys(b).some(k => !['theme', 'holiday_from', 'holiday_to', 'holiday_title'].includes(k))) return fail(res, 403, 'Недостаточно прав');
       if ('tz' in b) { try { new Intl.DateTimeFormat('en', { timeZone: String(b.tz) }); } catch { return fail(res, 400, 'Неизвестный часовой пояс'); } upd.tz = String(b.tz); }
       if ('change_ttl_hours' in b) upd.change_ttl_hours = clampInt(b.change_ttl_hours, 1, 168, 24);
       if ('board_seconds' in b) upd.board_seconds = clampInt(b.board_seconds, 10, 600, 45);
@@ -467,24 +449,13 @@ async function adminApi(req, res, p, url, user) {
   if (p === '/api/admin/media/upload' && m === 'POST') {
     if (!need('media')) return;
     let buf;
-    try { buf = await readBody(req, MAX_VIDEO + 1024); } catch (e) { return fail(res, 413, 'Файл слишком большой (видео — до 30 МБ)'); }
-    const info = sniff(buf);
-    if (!info) return fail(res, 400, 'Поддерживаются JPG, PNG, PDF и MP4');
-    const limit = info.kind === 'video' ? MAX_VIDEO : info.kind === 'pdf' ? MAX_PDF : MAX_IMAGE;
-    if (buf.length > limit) return fail(res, 413, `Файл больше ${Math.round(limit / 1048576)} МБ`);
-    let { ext } = info; let data = buf;
-    if (info.kind === 'image') ({ buf: data, ext } = await compressImage(buf, ext));
-    const file = crypto.randomBytes(10).toString('hex') + ext;
-    fs.writeFileSync(path.join(S.MEDIA, file), data);
-    const title = decodeURIComponent(String(req.headers['x-file-title'] || '')).slice(0, 120) || decodeURIComponent(String(req.headers['x-file-name'] || 'Без названия')).replace(/\.[^.]+$/, '').slice(0, 120);
-    const maxSort = db.prepare('SELECT COALESCE(MAX(sort),0) m FROM media').get().m;
-    // длительность ролика берёт браузер админки при загрузке (X-Duration); если не смог — 30 с
-    const reqDur = Math.round(Number(req.headers['x-duration']));
-    const dur = info.kind === 'video' ? (reqDur >= 1 ? Math.max(3, Math.min(600, reqDur)) : 30) : 10;
-    const r = db.prepare('INSERT INTO media(file,kind,title,duration,sort,size,created_by,created_at,place) VALUES(?,?,?,?,?,?,?,?,?)').run(file, info.kind, title, dur, maxSort + 1, data.length, user.name, Date.now(), PLACES.includes(String(req.headers['x-place'])) ? String(req.headers['x-place']) : 'screen');
-    audit({ user, action: 'media_uploaded', target: title, now: `${({ image: 'картинка', video: 'видео', pdf: 'презентация' })[info.kind]}, ${Math.round(data.length / 1024)} КБ` });
-    S.bump();
-    return json(res, 201, mediaRow(db.prepare('SELECT * FROM media WHERE id=?').get(Number(r.lastInsertRowid))));
+    try { buf = await readBody(req, M.MAX_VIDEO + 1024); } catch (e) { return fail(res, 413, 'Файл слишком большой (видео — до 30 МБ)'); }
+    try {
+      const row = await M.saveMedia({ buf, user,
+        name: decodeURIComponent(String(req.headers['x-file-name'] || '')), title: decodeURIComponent(String(req.headers['x-file-title'] || '')),
+        place: String(req.headers['x-place'] || ''), duration: req.headers['x-duration'] });
+      return json(res, 201, mediaRow(row));
+    } catch (e) { if (e instanceof M.MediaError) return fail(res, e.code, e.message); throw e; }
   }
   if (p === '/api/admin/media/reorder' && m === 'POST') {
     if (!need('media')) return;
@@ -608,7 +579,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/api/auth/') || p.startsWith('/api/admin/')) {
       const user = A.userFromReq(req);
-      if (p === '/api/auth/me') return user ? json(res, 200, { ...user, role_label: roleLabel(user.role), can: Object.fromEntries(['users', 'settings', 'media', 'schedule', 'subs', 'announcements', 'screens', 'audit'].map(k => [k, A.can(user, k)])) }) : fail(res, 401, 'Нужно войти');
+      if (p === '/api/auth/me') return user ? json(res, 200, { ...user, role_label: roleLabel(user.role), can: Object.fromEntries(['users', 'settings', 'media', 'schedule', 'subs', 'announcements', 'urgent', 'screens', 'audit'].map(k => [k, A.can(user, k)])) }) : fail(res, 401, 'Нужно войти');
       if (!user) return fail(res, 401, 'Нужно войти');
       if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'sb') return fail(res, 403, 'Запрос отклонён');
       if (p === '/api/auth/logout' && req.method === 'POST') { audit({ user, action: 'logout', target: user.login }); A.destroySession(req); return json(res, 200, { ok: true }, { 'Set-Cookie': A.clearCookie() }); }
@@ -668,6 +639,6 @@ const server = http.createServer(async (req, res) => {
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
     db.prepare('DELETE FROM screens WHERE token_hash IS NULL AND last_seen < ?').run(Date.now() - SCREEN_TTL);
   }, 3600e3);
-  server.listen(PORT, HOST, () => console.log(`Панель: http://localhost:${PORT}/  (ТВ: /tv, админка: /admin)${sharp ? ', сжатие картинок включено' : ''}`));
+  server.listen(PORT, HOST, () => console.log(`Панель: http://localhost:${PORT}/  (ТВ: /tv, админка: /admin)${M.hasSharp ? ', сжатие картинок включено' : ''}`));
   TGB.start().catch(e => console.error('[tg] не запущен:', e.message));
 })();

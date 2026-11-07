@@ -1,5 +1,7 @@
 // Экран показа (ТВ). Работает автономно: данные берутся из сети или из последней сохранённой копии.
 const REFRESH_MS = 15 * 1000;      // экран спрашивает сервер каждые 15 секунд
+const MAX_PER_VISIT = 1;           // постеров и роликов на весь экран за один заход
+const BELL_MARGIN_S = 20;          // за сколько секунд до звонка ролики уже не начинаем
 let S = null, slot = { phase: 'off' }, offline = false;
 const $ = id => document.getElementById(id);
 
@@ -287,11 +289,14 @@ async function runShow() {
     if (staticNow() || nightNow()) continue;                        // статичный режим и ночь: постеры не идут
     const list = weighted(S.carousel.filter(i => i.fullscreen && eligible(i)));
     if (!list.length) continue;
-    const n = Math.min(3, new Set(list.map(i => i.id)).size);     // за один заход — до трёх материалов
+    // Расписание главное: на перемене за один заход идёт один материал (≈15–20% времени), а не три подряд.
+    // Материал, который не закончится за 20 секунд до звонка, не запускаем: ученик не должен остаться без расписания.
+    const n = Math.min(MAX_PER_VISIT, new Set(list.map(i => i.id)).size);
     let played = 0;
     for (let k = 0; k < list.length * 2 && played < n; k++) {
       const item = list[mediaIdx++ % list.length];
       if (!eligible(item)) continue;
+      if (slot.phase === 'break' && slot.left != null && Math.max(item.duration || 10, 5) > slot.left - BELL_MARGIN_S) continue;
       if (await playFullscreen(item)) played++;
     }
     $('fs').classList.remove('on'); layers.forEach(l => l.classList.remove('on'));
