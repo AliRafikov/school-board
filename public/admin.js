@@ -568,19 +568,12 @@ async function viewSettings() {
     <label class="f">Название школы на экране<input type="text" id="s2" value="${esc(s.school_name)}" maxlength="80"></label>
     <div class="row"><label class="f">Минимум секунд на таблице между видео<input type="number" id="s3" min="10" max="600" value="${esc(s.board_seconds)}"></label>
     <label class="f">Часов подсвечивать изменения<input type="number" id="s4" min="1" max="168" value="${esc(s.change_ttl_hours)}"></label></div>
-    <label class="f">Режим экрана<select id="s6">
-      <option value="auto" ${(s.display_mode || 'auto') === 'auto' ? 'selected' : ''}>Авто: на уроках статично (логотип и QR-баннеры), на переменах как обычно</option>
-      <option value="static" ${s.display_mode === 'static' ? 'selected' : ''}>Всегда статично: логотип и QR-баннеры, ролики и постеры не идут (гости, мероприятия)</option>
-      <option value="active" ${s.display_mode === 'active' ? 'selected' : ''}>Всегда активно: ролики и постеры идут и на уроках</option>
-    </select></label>
-    <div class="row"><label class="f">Ночной режим с<input type="time" id="s8" value="${esc(s.night_from || '21:00')}" style="width:130px"></label>
-    <label class="f">до<input type="time" id="s9" value="${esc(s.night_to || '07:00')}" style="width:130px"></label></div>
-    <p class="muted small" style="margin:-6px 0 0">Ночной режим работает, когда тема экрана «Авто». Тему переключают на странице «Обзор».</p>
+    <p class="muted small" style="margin:0">Тема, ночной режим, цвета и режим показа теперь в разделе «Система» → «Оформление».</p>
     <label class="f">Часовой пояс<select id="s5">${TZ_LIST.concat(TZ_LIST.some(z => z[0] === s.tz) ? [] : [[s.tz, s.tz]]).map(([v, l]) => `<option value="${esc(v)}"${v === s.tz ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
     <div id="sm"></div><div><button class="btn primary" type="submit">Сохранить</button></div></form>`);
   document.getElementById('sf').onsubmit = async e => {
     e.preventDefault(); const m = document.getElementById('sm');
-    try { await api('PUT', '/api/admin/settings', { school_name: document.getElementById('s2').value, board_seconds: document.getElementById('s3').value, change_ttl_hours: document.getElementById('s4').value, display_mode: document.getElementById('s6').value, tz: document.getElementById('s5').value, night_from: document.getElementById('s8').value, night_to: document.getElementById('s9').value });
+    try { await api('PUT', '/api/admin/settings', { school_name: document.getElementById('s2').value, board_seconds: document.getElementById('s3').value, change_ttl_hours: document.getElementById('s4').value, tz: document.getElementById('s5').value });
       msg(m, 'Сохранено', 'ok'); }
     catch (er) { msg(m, er.message); }
   };
@@ -981,33 +974,120 @@ async function viewAnn() {
 const VIEWS = { overview: viewOverview, schedule: viewSchedule, subs: viewSubs, urgent: viewUrgent, ann: viewAnn };
 
 // ---------- оформление экрана ----------
-const LOOK_COLORS = [['look_bg', 'Фон', '#d9dde4'], ['look_panel', 'Панели (блоки)', '#f1f3f6'], ['look_text', 'Текст', '#1f2330'], ['look_accent', 'Акцент (полосы, текущий урок)', '#db4755']];
+// Всё, что меняет вид экрана в холле, в одном месте: тема и ночь, цвета, что показывать, размер таблицы, режим показа.
+// Справа живой предпросмотр: изменения видны сразу, на настоящих экранах они появятся после сохранения.
+const LOOK_DEFAULT = { bg: '#d9dde4', panel: '#f1f3f6', text: '#1f2330', accent: '#db4755' };
+const LOOK_COLORS = [['bg', 'Фон', 'за блоками'], ['panel', 'Блоки', 'шапка, звонки, таблица'], ['text', 'Текст', 'предметы и время'], ['accent', 'Акцент', 'замены, текущий урок']];
+const LOOK_PRESETS = [['Лицей', {}], ['Синий', { bg: '#dbe4ef', panel: '#f3f7fc', text: '#1b2433', accent: '#2f6fd6' }],
+  ['Зелёный', { bg: '#dce6df', panel: '#f2f7f3', text: '#1d2a22', accent: '#1f8a5b' }], ['Графит', { bg: '#d8d8dc', panel: '#f0f0f2', text: '#202126', accent: '#4b5563' }],
+  ['Бордо', { bg: '#e6dcdd', panel: '#f7f1f1', text: '#2a1d1f', accent: '#9b2335' }]];
+const LOOK_MODES = [['auto', 'Авто', 'На уроках экран спокойный: логотип и QR-баннеры. На переменах всё как обычно: постеры и ролики.'],
+  ['static', 'Всегда спокойный', 'Для гостей и мероприятий: постеры и ролики на весь экран не идут.'],
+  ['active', 'Всегда с роликами', 'Постеры и ролики идут и во время уроков.']];
+const LOOK_THEMES = [['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']];
+// контраст по WCAG: насколько один цвет читается на другом (4.5 и выше — хорошо)
+const hexLum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const contrastOf = (a, b) => { const [x, y] = [hexLum(a), hexLum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+
 async function viewLook() {
   const s = await api('GET', '/api/admin/settings');
-  const colorRow = ([k, label, def]) => `<div class="row" style="align-items:center;gap:12px;margin-bottom:8px"><label class="check" style="min-width:260px"><input type="checkbox" data-use="${k}" ${s[k] ? 'checked' : ''}> ${esc(label)}</label><input type="color" data-k="${k}" value="${esc(s[k] || def)}"></div>`;
+  const from = {
+    theme: s.theme || 'auto', night_from: s.night_from || '21:00', night_to: s.night_to || '07:00', display_mode: s.display_mode || 'auto',
+    bg: s.look_bg || '', panel: s.look_panel || '', text: s.look_text || '', accent: s.look_accent || '',
+    font: Number(s.look_font) || 100, weather: s.look_weather !== '0', bells: s.look_bells !== '0', banners: s.look_banners !== '0'
+  };
+  const STANDARD = { theme: 'auto', night_from: '21:00', night_to: '07:00', display_mode: 'auto', bg: '', panel: '', text: '', accent: '', font: 100, weather: true, bells: true, banners: true };
+  let cur = { ...from }, previewNight = false, saved = { ...from };
+  const val = k => cur[k] || LOOK_DEFAULT[k];
   shell('Оформление', `
-    <div class="card"><h2>Цвета светлой темы</h2>
-      <p class="muted small" style="margin-top:0">Тёмная тема остаётся тёмной. Если галочка не стоит, используется стандартный цвет.</p>
-      ${LOOK_COLORS.map(colorRow).join('')}</div>
-    <div class="card"><h2>Что показывать на экране</h2>
-      <label class="check"><input type="checkbox" data-k="look_weather" ${s.look_weather !== '0' ? 'checked' : ''}> Погода в шапке</label>
-      <label class="check"><input type="checkbox" data-k="look_bells" ${s.look_bells !== '0' ? 'checked' : ''}> Расписание звонков справа</label>
-      <label class="check"><input type="checkbox" data-k="look_banners" ${s.look_banners !== '0' ? 'checked' : ''}> Маленькие баннеры с QR-кодами слева</label>
-      <label class="f" style="margin-top:10px">Размер таблицы уроков, % (80–130)<input type="number" data-k="look_font" min="80" max="130" step="5" value="${esc(s.look_font || '100')}" style="width:110px"></label></div>
-    <div class="card"><h2>Как сейчас выглядит экран</h2>
-      <div class="tvframe" id="tvWrap"><iframe src="/tv?preview=1" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div></div>
-    <div class="row"><button class="btn primary" id="lookSave" type="button">Сохранить оформление</button></div>
-    <div id="lookMsg" style="margin-top:10px"></div>`);
-  const wrap = document.getElementById('tvWrap'), frame = document.getElementById('tvFrame');
+    <div class="look-grid">
+      <div class="look-col">
+        <div class="card"><h2>Тема экрана</h2>
+          <div class="seg seg-wide" id="lkTheme" role="group" aria-label="Тема экрана">${LOOK_THEMES.map(([v, l]) => `<button type="button" data-th="${v}">${l}</button>`).join('')}</div>
+          <p class="muted small" id="lkThemeHint" style="margin:10px 0 0"></p>
+          <div class="row" id="lkNight" style="margin-top:10px"><label class="f">Ночь с<input type="time" id="lkNf" style="width:130px"></label><label class="f">до<input type="time" id="lkNt" style="width:130px"></label></div></div>
+        <div class="card"><h2>Цвета светлой темы</h2>
+          <div class="presets-look" id="lkPresets">${LOOK_PRESETS.map(([n, c], i) => { const d = { ...LOOK_DEFAULT, ...c }; return `<button type="button" class="preset-look" data-p="${i}" aria-pressed="false"><span class="dots"><i style="background:${d.bg}"></i><i style="background:${d.panel}"></i><i style="background:${d.accent}"></i></span>${n}</button>`; }).join('')}</div>
+          ${LOOK_COLORS.map(([k, l, h]) => `<div class="colorrow"><label for="lkc_${k}"><b>${l}</b><span class="muted small">${h}</span></label><input type="color" id="lkc_${k}" data-c="${k}"><button class="btn sm" type="button" data-reset="${k}">Стандартный</button></div>`).join('')}
+          <div id="lkContrast"></div>
+          <p class="muted small" style="margin:10px 0 0">Тёмная тема и ночной экран остаются тёмными.</p></div>
+        <div class="card"><h2>Что показывать</h2>
+          <label class="check"><input type="checkbox" data-t="weather"> Погода в шапке</label>
+          <label class="check"><input type="checkbox" data-t="bells"> Расписание звонков справа</label>
+          <label class="check"><input type="checkbox" data-t="banners"> Маленькие баннеры с QR-кодами слева</label>
+          <div class="f" style="margin-top:14px"><span class="muted small" style="font-weight:600">Размер таблицы уроков: <output id="lkFontO"></output></span>
+            <input type="range" id="lkFont" min="80" max="130" step="5" aria-label="Размер таблицы уроков"></div></div>
+        <div class="card"><h2>Режим показа</h2>
+          <div class="optlist" role="radiogroup" aria-label="Режим показа">${LOOK_MODES.map(([v, t, d]) => `<label class="opt"><input type="radio" name="lkMode" value="${v}"><span><b>${t}</b><span class="muted small">${d}</span></span></label>`).join('')}</div></div>
+      </div>
+      <div class="look-col look-prev"><div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">Так выглядит экран</h2>
+        <div class="seg seg2" id="lkDayNight" role="group" aria-label="Что показать в предпросмотре"><button type="button" data-n="0">День</button><button type="button" data-n="1">Ночь</button></div></div>
+        <div class="tvframe" id="tvWrap"><iframe src="/tv?preview=1" title="Предпросмотр экрана" id="tvFrame" tabindex="-1"></iframe></div>
+        <p class="muted small" style="margin:10px 0 0">Изменения видны здесь сразу. На экранах в холле они появятся после сохранения, в течение минуты.</p></div></div>
+    </div>
+    <div class="savebar" id="lkBar"><span id="lkState" class="muted"></span><button class="btn" id="lkReset" type="button" title="Вернуть стандартные цвета, тему и режим (кнопку «Сохранить» ещё нужно нажать)">Сбросить</button><button class="btn primary" id="lkSave" type="button">Сохранить оформление</button></div>
+    <div id="lookMsg"></div>`);
+  const $q = id => document.getElementById(id), frame = $q('tvFrame'), wrap = $q('tvWrap');
   const fit = () => { frame.style.transform = `scale(${wrap.clientWidth / 1920})`; };
   new ResizeObserver(fit).observe(wrap); fit();
-  document.getElementById('lookSave').onclick = async () => {
-    const body = {};
-    LOOK_COLORS.forEach(([k]) => { body[k] = document.querySelector(`input[data-use="${k}"]`).checked ? document.querySelector(`input[data-k="${k}"]`).value : ''; });
-    document.querySelectorAll('input[data-k^="look_"]:not([type="color"])').forEach(el => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; });
-    try { await api('PUT', '/api/admin/settings', body); msg(document.getElementById('lookMsg'), 'Сохранено. Экраны обновятся в течение минуты.', 'ok'); frame.src = '/tv?preview=1'; }
-    catch (er) { msg(document.getElementById('lookMsg'), er.message); }
+
+  const push = () => {
+    const w = frame.contentWindow; if (!w || typeof w.previewSettings !== 'function') return false;
+    w.previewSettings({ theme: cur.theme, nightFrom: cur.night_from, nightTo: cur.night_to, displayMode: cur.display_mode, previewNight: cur.theme === 'auto' ? previewNight : null,
+      look: { bg: cur.bg, panel: cur.panel, text: cur.text, accent: cur.accent, font: cur.font, weather: cur.weather, bells: cur.bells, banners: cur.banners } });
+    return true;
   };
+  // страница в рамке загружает данные не сразу: пробуем несколько раз
+  frame.addEventListener('load', () => [400, 1200, 2500, 5000].forEach(t => setTimeout(push, t)));
+
+  const hint = { auto: 'Днём светлая, ночью чёрный экран с временем и логотипом.', light: 'Светлая весь день, ночного экрана нет.', dark: 'Тёмная весь день, ночного экрана нет.' };
+  const sync = () => {
+    document.querySelectorAll('#lkTheme [data-th]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.th === cur.theme)));
+    $q('lkThemeHint').textContent = hint[cur.theme];
+    $q('lkNight').hidden = cur.theme !== 'auto'; $q('lkDayNight').hidden = cur.theme !== 'auto';
+    $q('lkNf').value = cur.night_from; $q('lkNt').value = cur.night_to;
+    document.querySelectorAll('#lkDayNight [data-n]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.n === '1') === previewNight)));
+    LOOK_COLORS.forEach(([k]) => { $q('lkc_' + k).value = val(k); document.querySelector(`[data-reset="${k}"]`).hidden = !cur[k]; });
+    document.querySelectorAll('#lkPresets [data-p]').forEach(b => { const c = { ...LOOK_DEFAULT, ...LOOK_PRESETS[b.dataset.p][1] }; b.setAttribute('aria-pressed', String(LOOK_COLORS.every(([k]) => val(k).toLowerCase() === c[k]))); });
+    const warn = [];
+    if (contrastOf(val('text'), val('panel')) < 4.5) warn.push('Текст плохо читается на блоках: сделайте его темнее или блоки светлее.');
+    if (contrastOf(val('text'), val('bg')) < 3) warn.push('Текст почти сливается с фоном.');
+    if (contrastOf('#ffffff', val('accent')) < 3) warn.push('Белый текст на акценте (текущий урок) плохо виден: возьмите акцент темнее.');
+    $q('lkContrast').innerHTML = warn.length ? `<div class="msg warn" style="margin-top:12px">${warn.map(esc).join('<br>')}</div>` : '';
+    document.querySelectorAll('[data-t]').forEach(c => { c.checked = !!cur[c.dataset.t]; });
+    $q('lkFont').value = cur.font; $q('lkFontO').textContent = cur.font + '%';
+    document.querySelectorAll('input[name=lkMode]').forEach(r => { r.checked = r.value === cur.display_mode; });
+    const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
+    $q('lkBar').classList.toggle('dirty', dirty);
+    $q('lkState').textContent = dirty ? 'Есть несохранённые изменения' : 'Всё сохранено';
+    $q('lkSave').disabled = !dirty;
+    $q('lkReset').disabled = JSON.stringify(cur) === JSON.stringify(STANDARD);
+    push();
+  };
+  const set = patch => { Object.assign(cur, patch); sync(); };
+
+  document.querySelectorAll('#lkTheme [data-th]').forEach(b => b.onclick = () => set({ theme: b.dataset.th }));
+  document.querySelectorAll('#lkDayNight [data-n]').forEach(b => b.onclick = () => { previewNight = b.dataset.n === '1'; sync(); });
+  $q('lkNf').onchange = e => { if (e.target.value) set({ night_from: e.target.value }); else sync(); };
+  $q('lkNt').onchange = e => { if (e.target.value) set({ night_to: e.target.value }); else sync(); };
+  document.querySelectorAll('#lkPresets [data-p]').forEach(b => b.onclick = () => set({ bg: '', panel: '', text: '', accent: '', ...LOOK_PRESETS[b.dataset.p][1] }));
+  // пока человек двигает выбор цвета, обновляем только предпросмотр; запись в настройки — когда выбор закончен
+  document.querySelectorAll('input[data-c]').forEach(i => { i.oninput = () => { cur[i.dataset.c] = i.value; push(); }; i.onchange = () => set({ [i.dataset.c]: i.value }); });
+  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => set({ [b.dataset.reset]: '' }));
+  document.querySelectorAll('[data-t]').forEach(c => c.onchange = () => set({ [c.dataset.t]: c.checked }));
+  $q('lkFont').oninput = e => { cur.font = Number(e.target.value); $q('lkFontO').textContent = cur.font + '%'; push(); };
+  $q('lkFont').onchange = e => set({ font: Number(e.target.value) });
+  document.querySelectorAll('input[name=lkMode]').forEach(r => r.onchange = () => set({ display_mode: r.value }));
+  $q('lkReset').onclick = () => set({ ...STANDARD });
+  $q('lkSave').onclick = async () => {
+    const m = $q('lookMsg'), btn = $q('lkSave'); btn.disabled = true;
+    try {
+      await api('PUT', '/api/admin/settings', { theme: cur.theme, night_from: cur.night_from, night_to: cur.night_to, display_mode: cur.display_mode,
+        look_bg: cur.bg, look_panel: cur.panel, look_text: cur.text, look_accent: cur.accent, look_font: cur.font, look_weather: cur.weather, look_bells: cur.bells, look_banners: cur.banners });
+      saved = { ...cur }; sync(); msg(m, 'Сохранено. Экраны в холле обновятся в течение минуты.', 'ok'); setTimeout(() => msg(m, ''), 4000);
+    } catch (er) { msg(m, er.message); sync(); }
+  };
+  sync();
 }
 // старые адреса (#audit, #media, #screens и т. п.) переводим в новые разделы
 const LEGACY = { audit: ['system', 'audit'], screens: ['system', 'screens'], users: ['system', 'users'], settings: ['system', 'settings'], help: ['system', 'help'], profile: ['system', 'profile'], media: ['ann', ''],

@@ -229,6 +229,7 @@ let lastStatic = null, lastNight = null;
 // Ночь: только при теме «авто» и времени между «ночь с» и «ночь до» (может идти через полночь)
 function nightNow() {
   if (!S || S.theme !== 'auto') return false;
+  if (isPreview && S.previewNight != null) return S.previewNight; // предпросмотр в админке: показать ночь или день, когда захочется
   const n = schoolNow(S.tz).minutes, a = toMin(S.nightFrom || '21:00'), b = toMin(S.nightTo || '07:00');
   return a <= b ? (n >= a && n < b) : (n >= a || n < b);
 }
@@ -418,6 +419,13 @@ async function refresh() {
   ping();
 }
 
+// Предпросмотр из админки («Оформление»): страница в рамке получает настройки сразу, до сохранения.
+// На настоящих экранах ничего не делает: isPreview там ложь.
+window.previewSettings = patch => {
+  if (!S || !isPreview) return;
+  S = { ...S, ...patch, look: { ...(S.look || {}), ...(patch.look || {}) } };
+  applyTheme(); renderAll(); showCenter();
+};
 setInterval(tick, 1000);
 setInterval(refresh, REFRESH_MS);
 // ночью (в 03:00) повторно прогреваем кэш медиа
