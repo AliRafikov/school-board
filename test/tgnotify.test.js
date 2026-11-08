@@ -1,5 +1,5 @@
 // Проверка уведомлений об экранах (запуск: node test/tgnotify.test.js). Без связи с Telegram.
-process.env.DATA_DIR = '/tmp/sb-tgnotify-test';
+process.env.DATA_DIR = require('path').join(require('os').tmpdir(), 'sb-tgnotify-test-' + process.pid);
 require('fs').rmSync(process.env.DATA_DIR, { recursive: true, force: true });
 const TGB = require('../lib/tgbot');
 let fails = 0; const ok = (c, m) => { console.log((c ? 'OK   ' : 'FAIL ') + m); if (!c) fails++; };

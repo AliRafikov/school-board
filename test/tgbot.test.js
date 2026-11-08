@@ -1,5 +1,5 @@
 // Проверка входа и привязки через Telegram без связи с Telegram (запуск: node test/tgbot.test.js)
-process.env.DATA_DIR = '/tmp/sb-tg-test-data';
+process.env.DATA_DIR = require('path').join(require('os').tmpdir(), 'sb-tg-test-data-' + process.pid);
 require('fs').rmSync(process.env.DATA_DIR, { recursive: true, force: true });
 const { db } = require('../lib/db');
 const A = require('../lib/auth');
