@@ -129,7 +129,9 @@ function renderClasses() {
           if (!l) return '<div class="c"></div>';
           const sr = splitRoom(l.subject, l.room), nm = subjName(sr.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
           const sur = t => esc(String(t || '').split(' ')[0]);
-          return `<div class="c${l.was ? ' chg' : ''}"><span data-key="${esc2(nm.key)}">${esc(text)}${l.note ? ` <i>(${esc(l.note)})</i>` : ''}${l.was && l.teacher ? `<em>${sur(l.teacher)}</em>` : ''}</span><b>${esc(roomText(sr.room, sr.subject))}</b></div>`;
+          // под предметом — одна строка уточнения: новый учитель и примечание (подгруппа, «вместо …»)
+          const det = l.was ? [l.teacher ? sur(l.teacher) : '', l.note ? `(${esc(l.note)})` : ''].filter(Boolean).join(' ') : '';
+          return `<div class="c${l.was ? ' chg' : ''}"><div class="ct"><span data-key="${esc2(nm.key)}">${esc(text)}</span>${det ? `<em>${det}</em>` : ''}</div><b>${esc(roomText(sr.room, sr.subject))}</b></div>`;
         }).join('') + '</div></div>';
     }).join('');
     $('classes').innerHTML = gut + `<div class="cols" style="grid-template-columns:repeat(${part.length},1fr)">${cols}</div>` + gut +
@@ -139,25 +141,18 @@ function renderClasses() {
   shortKeys = new Set();
   draw();
   const over = new Set();
-  $('classes').querySelectorAll('.c > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth + 1) over.add(sp.dataset.key); });
+  $('classes').querySelectorAll('.c .ct > span[data-key]').forEach(sp => { if (sp.scrollWidth > sp.clientWidth + 1) over.add(sp.dataset.key); });
   const fresh = [...over].filter(k => !shortKeys.has(k));
   if (fresh.length) { fresh.forEach(k => shortKeys.add(k)); draw(); }
-  // шаг 3: обычные уроки всегда в одну строку. Если название всё ещё не влезает, уменьшаем шрифт только в этой
-  // клетке, но не меньше 60% от обычного. Остальные клетки остаются крупными. Перенос — только у замен и отмен.
+  // шаг 3: в клетке всегда две строки — предмет и уточнение (учитель, примечание). Если название не влезает,
+  // уменьшаем шрифт только в этой клетке, но не меньше 60% от обычного: переносить на третью строку нельзя.
   const host = $('classes');
-  host.querySelectorAll('.c:not(.chg) > span[data-key]').forEach(sp => {
+  host.querySelectorAll('.c .ct > span[data-key]').forEach(sp => {
     sp.style.fontSize = '';
     const base = parseFloat(getComputedStyle(sp).fontSize);
     let fs = base;
     const fits = () => sp.scrollWidth <= sp.clientWidth + 1;
-    while (!fits() && fs > base * 0.6) { fs *= 0.97; sp.style.fontSize = fs + 'px'; }
-  });
-  host.querySelectorAll('.c.chg > span[data-key]').forEach(sp => {
-    const base = parseFloat(getComputedStyle(sp).fontSize);
-    let fs = base;
-    const fits = () => sp.scrollWidth <= sp.clientWidth + 1 && sp.scrollHeight <= sp.clientHeight + 2;
-    while (!fits() && fs > base * 0.6) { fs *= 0.95; sp.style.fontSize = fs + 'px'; }
-    if (!fits()) { sp.style.whiteSpace = 'normal'; sp.style.lineHeight = '1.05'; }
+    while (!fits() && fs > base * 0.6) { fs *= 0.96; sp.style.fontSize = fs + 'px'; }
   });
   if (pagesN > 1) clsTimer = setTimeout(() => { clsPage++; renderClasses(); }, 12000);
 }
