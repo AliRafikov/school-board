@@ -19,7 +19,7 @@ function tick() {
   if (lastIso && lastIso !== now.iso) renderAll(); // наступил новый день
   lastIso = now.iso;
   slot = currentSlot(S.bells, now);
-  const st = staticNow(), nt = nightNow();
+  const st = staticNow(), nt = (inNightWindow() ? 'w' : '') + (nightNow() ? 's' : '');
   if (st !== lastStatic || nt !== lastNight) { lastStatic = st; lastNight = nt; applyTheme(); renderAll(); showCenter(); }
   const L = { lesson: 'Идёт урок · до звонка', break: 'Перемена · до звонка', before: 'До начала уроков', after: 'Уроки закончились', off: 'Выходной' }[slot.phase];
   $('nowLabel').textContent = L;
@@ -167,7 +167,7 @@ function renderBells() {
   $('bells').innerHTML = S.bells.map(b => `<div class="bl${b.was ? ' chg' : ''}${b.cancelled ? ' off' : ''}" data-s="${esc(b.start)}" data-e="${esc(b.end)}"><span>${b.meal ? esc(b.title.toUpperCase()) : b.n}${b.label ? `<small>${esc(b.label.replace(/\s*классов?|\s*классы/i, ' кл'))}</small>` : ''}</span><i></i><span>${b.cancelled ? 'отменён' : `${t0(b.start)}–${t0(b.end)}`}</span></div>`).join('');
 }
 // Логотип: на тёмном фоне (тёмная тема или ночной экран) — тёмный логотип, если он загружен
-const darkBg = () => !!S && (S.theme === 'dark' || nightNow());
+const darkBg = () => !!S && (S.theme === 'dark' || inNightWindow());
 const logoSrc = () => (darkBg() && S.logoDark) || S.logo || '';
 function renderBrand() {
   const src = logoSrc();
@@ -226,13 +226,16 @@ function renderAll() { showBanners(); renderClasses(); renderBells(); renderBran
 
 // Статичный экран: на уроках (если включено в настройках) или весь день (если включено «держать»)
 let lastStatic = null, lastNight = null;
-// Ночь: только при теме «авто» и времени между «ночь с» и «ночь до» (может идти через полночь)
-function nightNow() {
-  if (!S || S.theme !== 'auto') return false;
+// Ночь: время между «ночь с» и «ночь до» (может идти через полночь), если ночной режим не «как днём».
+// Тема днём (светлая или тёмная) и ночной режим не зависят друг от друга.
+function inNightWindow() {
+  if (!S || (S.nightMode || 'screen') === 'same') return false;
   if (isPreview && S.previewNight != null) return S.previewNight; // предпросмотр в админке: показать ночь или день, когда захочется
   const n = schoolNow(S.tz).minutes, a = toMin(S.nightFrom || '21:00'), b = toMin(S.nightTo || '07:00');
   return a <= b ? (n >= a && n < b) : (n >= a || n < b);
 }
+// Чёрный ночной экран (время и логотип): только в режиме «screen»
+const nightNow = () => !!S && (S.nightMode || 'screen') === 'screen' && inNightWindow();
 const staticNow = () => !!S && (nightNow() || S.displayMode === 'static' || (S.displayMode !== 'active' && slot.phase === 'lesson'));
 
 // ---------- Показ: таблица → постеры/ролики на весь экран → таблица ----------

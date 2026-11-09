@@ -131,7 +131,7 @@ async function adminApi(req, res, p, url, user) {
     const clearUntil = Number(getSetting('clear_until')) || 0;
     const shiftNow = getSetting('shift_date') === todayNow && Number(getSetting('shift_minutes')) > 0;
     return json(res, 200, {
-      mode: S.mode(), sync: S.status(), screen_theme: getSetting('theme') || 'auto',
+      mode: S.mode(), sync: S.status(), screen_theme: getSetting('theme') || 'light', screen_night_mode: getSetting('night_mode') || 'screen',
       status: {
         urgent: urgentNow ? { title: urgentNow, source: getSetting('urgent_source') || '', since: Number(getSetting('urgent_since')) || 0 } : null,
         clear: clearUntil > now ? { title: getSetting('clear_title') || '', until: clearUntil } : null,
@@ -338,12 +338,14 @@ async function adminApi(req, res, p, url, user) {
     if (m === 'GET') return json(res, 200, allSettings());
     if (m === 'PUT') {
       const b = await readJSON(req), before = allSettings(), upd = {};
-      if (limited && Object.keys(b).some(k => !['theme', 'holiday_from', 'holiday_to', 'holiday_title'].includes(k))) return fail(res, 403, 'Недостаточно прав');
+      if (limited && Object.keys(b).some(k => !['theme', 'night_mode', 'holiday_from', 'holiday_to', 'holiday_title'].includes(k))) return fail(res, 403, 'Недостаточно прав');
       if ('tz' in b) { try { new Intl.DateTimeFormat('en', { timeZone: String(b.tz) }); } catch { return fail(res, 400, 'Неизвестный часовой пояс'); } upd.tz = String(b.tz); }
       if ('change_ttl_hours' in b) upd.change_ttl_hours = clampInt(b.change_ttl_hours, 1, 168, 24);
       if ('board_seconds' in b) upd.board_seconds = clampInt(b.board_seconds, 10, 600, 45);
       if ('display_mode' in b) { if (!['auto', 'static', 'active'].includes(b.display_mode)) return fail(res, 400, 'Неизвестный режим экрана'); upd.display_mode = b.display_mode; }
-      if ('theme' in b) { if (!['auto', 'light', 'dark'].includes(b.theme)) return fail(res, 400, 'Неизвестная тема'); upd.theme = b.theme; }
+      // «auto» оставлен для старых страниц админки: светлая днём и чёрный экран ночью
+      if ('theme' in b) { if (!['auto', 'light', 'dark'].includes(b.theme)) return fail(res, 400, 'Неизвестная тема'); if (b.theme === 'auto') { upd.theme = 'light'; if (!('night_mode' in b)) upd.night_mode = 'screen'; } else upd.theme = b.theme; }
+      if ('night_mode' in b) { if (!['same', 'dark', 'screen'].includes(b.night_mode)) return fail(res, 400, 'Неизвестный ночной режим'); upd.night_mode = b.night_mode; }
       for (const k of ['night_from', 'night_to']) if (k in b) { if (!/^\d{2}:\d{2}$/.test(String(b[k]))) return fail(res, 400, 'Время ночи в формате ЧЧ:ММ'); upd[k] = String(b[k]); }
       if ('school_name' in b) upd.school_name = String(b.school_name).trim().slice(0, 80) || before.school_name;
       // оформление экрана: цвета #RRGGBB или пусто (стандартный), размер таблицы 80–130 %, переключатели показа

@@ -215,8 +215,17 @@ class Client {
   r = await d.req('PUT', '/api/admin/settings', { holiday_from: '', holiday_to: '', holiday_title: '' });
   st = await stateJ(); ok(r.s === 200 && !st.holiday, 'каникулы сняты, экран снова показывает расписание');
   r = await d.req('PUT', '/api/admin/settings', { night_from: '9pm' }); ok(r.s === 400, 'неверное время ночи отклонено');
-  r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
-  r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' }); ok(r.s === 200, 'тема возвращена в «авто»');
+  r = await d.req('PUT', '/api/admin/settings', { night_mode: 'dim' }); ok(r.s === 400, 'неизвестный ночной режим отклонён');
+  // тема днём и ночной режим независимы: тёмная тема + чёрный экран ночью
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_mode: 'screen', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
+  st = await stateJ(); ok(st.theme === 'dark' && st.nightMode === 'screen', 'тёмная тема вместе с ночным экраном попала на экран');
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'light', night_mode: 'dark' });
+  st = await stateJ(); ok(r.s === 200 && st.theme === 'light' && st.nightMode === 'dark', 'светлая днём и тёмное расписание ночью');
+  r = await d.req('PUT', '/api/admin/settings', { night_mode: 'same' });
+  st = await stateJ(); ok(r.s === 200 && st.nightMode === 'same', 'ночной режим «как днём»');
+  // старое значение «auto» (устаревшая страница админки) превращается в светлую тему с чёрным ночным экраном
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' });
+  st = await stateJ(); ok(r.s === 200 && st.theme === 'light' && st.nightMode === 'screen', 'старое «авто» → светлая днём, чёрный экран ночью');
   const wx = await fetch(BASE + '/api/weather'); const wj = await wx.json().catch(() => null);
   ok(wx.status === 200 && wj && typeof wj === 'object' && !('error' in wj), 'погода отвечает без ошибки сервера (данные или пусто, если нет сети)');
 
