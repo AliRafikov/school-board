@@ -414,7 +414,11 @@ async function adminApi(req, res, p, url, user) {
     if (!/^[A-Za-z0-9._-]{3,32}$/.test(login)) return fail(res, 400, 'Логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание');
     if (!name) return fail(res, 400, 'Укажите имя');
     if (!A.ROLES[b.role]) return fail(res, 400, 'Неизвестная роль');
-    if (b.role === 'director' && user.role !== 'director') return fail(res, 403, 'Директора может создать только директор');
+    if (b.role === 'director' && user.role !== 'director' && user.role !== 'owner') return fail(res, 403, 'Директора может создать только директор');
+    if (b.role === 'owner') {
+      if (user.role !== 'director' && user.role !== 'owner') return fail(res, 403, 'Владельца может назначить только директор');
+      if (db.prepare("SELECT 1 FROM users WHERE role='owner'").get()) return fail(res, 409, 'Владелец уже есть — такая роль только одна');
+    }
     if (db.prepare('SELECT 1 FROM users WHERE login=?').get(login)) return fail(res, 409, 'Такой логин уже есть');
     const pw = b.password ? String(b.password) : A.generatePassword();
     if (b.password) { const pr = A.passwordProblem(pw); if (pr) return fail(res, 400, pr); }
@@ -444,15 +448,22 @@ async function adminApi(req, res, p, url, user) {
     if (!need('users')) return;
     const id = Number(um[1]), target = db.prepare('SELECT * FROM users WHERE id=?').get(id);
     if (!target) return fail(res, 404, 'Пользователь не найден');
-    // директора меняет только он сам: иначе двое директоров могли бы отключить или перехватить друг друга
-    if (target.role === 'director' && target.id !== user.id) return fail(res, 403, 'Другого директора может менять только он сам');
+    // директора меняет только он сам, а владелец — ещё и любого директора: иначе двое директоров могли бы
+    // отключить или перехватить друг друга
+    if (target.role === 'owner' && target.id !== user.id) return fail(res, 403, 'Владельца может менять только он сам');
+    if (target.role === 'director' && target.id !== user.id && user.role !== 'owner') return fail(res, 403, 'Другого директора может менять только он сам');
     const b = await readJSON(req);
     const activeDirectors = () => db.prepare("SELECT COUNT(*) c FROM users WHERE role='director' AND active=1").get().c;
     let out = {};
     if ('role' in b && b.role !== target.role) {
       if (!A.ROLES[b.role]) return fail(res, 400, 'Неизвестная роль');
-      if (b.role === 'director' && user.role !== 'director') return fail(res, 403, 'Назначить директора может только директор');
-      if (target.role === 'director' && target.active && activeDirectors() <= 1) return fail(res, 400, 'Нельзя снять роль с единственного директора');
+      if (target.role === 'owner') return fail(res, 400, 'Роль владельца снять нельзя — такая учётная запись одна');
+      if (b.role === 'owner') {
+        if (db.prepare("SELECT 1 FROM users WHERE role='owner'").get()) return fail(res, 409, 'Владелец уже есть — такая роль только одна');
+        if (user.role !== 'director' && user.role !== 'owner') return fail(res, 403, 'Владельца может назначить только директор');
+      }
+      if (b.role === 'director' && user.role !== 'director' && user.role !== 'owner') return fail(res, 403, 'Назначить директора может только директор');
+      if (target.role === 'director' && target.active && activeDirectors() <= 1 && b.role !== 'owner') return fail(res, 400, 'Нельзя снять роль с единственного директора');
       db.prepare('UPDATE users SET role=? WHERE id=?').run(b.role, id);
       if (id !== user.id) db.prepare('DELETE FROM sessions WHERE user_id=?').run(id); // новая роль — новый вход
       audit({ user, action: 'user_role_changed', target: target.login, was: roleLabel(target.role), now: roleLabel(b.role) });
@@ -460,7 +471,8 @@ async function adminApi(req, res, p, url, user) {
     if ('name' in b && String(b.name).trim() && b.name !== target.name) { db.prepare('UPDATE users SET name=? WHERE id=?').run(String(b.name).trim(), id); audit({ user, action: 'user_renamed', target: target.login, was: target.name, now: b.name }); }
     if ('active' in b && !!b.active !== !!target.active) {
       if (id === user.id) return fail(res, 400, 'Нельзя отключить самого себя');
-      if (!b.active && target.role === 'director' && activeDirectors() <= 1) return fail(res, 400, 'Нельзя отключить единственного директора');
+      if (target.role === 'owner') return fail(res, 400, 'Владельца нельзя отключить');
+      if (!b.active && target.role === 'director' && activeDirectors() <= 1 && user.role !== 'owner') return fail(res, 400, 'Нельзя отключить единственного директора');
       db.prepare('UPDATE users SET active=? WHERE id=?').run(b.active ? 1 : 0, id);
       if (!b.active) db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
       audit({ user, action: b.active ? 'user_enabled' : 'user_disabled', target: target.login });
