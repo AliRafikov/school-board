@@ -734,8 +734,9 @@ async function viewSubs() {
         </div>
         <div class="row"><button class="btn primary" type="submit" id="sfBtn">Добавить замену</button><button class="btn" type="button" id="sfCancel" hidden>Отмена</button></div></form><div id="sm2" style="margin-top:10px"></div></div>
     <div class="card"><h2>Замены (последние 400)</h2>
-      ${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Дата</th><th>Уроки</th><th>Классы</th><th>Предмет</th><th>Кабинет</th><th>Учитель</th><th>Вместо</th><th></th></tr></thead><tbody>
-        ${list.map(g => `<tr><td class="num">${esc(g.date.split('-').reverse().join('.'))}</td><td class="num">${esc(g.lessons)}</td><td>${esc(g.cls.join(', '))}</td><td>${esc(g.subject)}${g.note ? `<div class="muted small">${esc(g.note)}</div>` : ''}</td><td>${esc(g.room)}</td><td>${esc(g.teacher)}</td><td>${esc(g.absent)}</td>
+      ${list.length ? `<div class="row" style="margin-bottom:10px"><button class="btn danger" id="subDel" type="button" disabled>Удалить выбранные</button><span class="muted small" id="subCnt"></span></div>
+        <div class="tbl-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" id="subAll" title="Выбрать все" aria-label="Выбрать все замены"></th><th>Дата</th><th>Уроки</th><th>Классы</th><th>Предмет</th><th>Кабинет</th><th>Учитель</th><th>Вместо</th><th></th></tr></thead><tbody>
+        ${list.map(g => `<tr><td>${me.can.subs ? `<input type="checkbox" class="subpick" data-ids="${g.ids.join(',')}" aria-label="Выбрать замену">` : ''}</td><td class="num">${esc(g.date.split('-').reverse().join('.'))}</td><td class="num">${esc(g.lessons)}</td><td>${esc(g.cls.join(', '))}</td><td>${esc(g.subject)}${g.note ? `<div class="muted small">${esc(g.note)}</div>` : ''}</td><td>${esc(g.room)}</td><td>${esc(g.teacher)}</td><td>${esc(g.absent)}</td>
           <td style="white-space:nowrap">${me.can.subs ? `<button class="btn sm" data-edit="${g.ids.join(',')}">Изменить</button> <button class="btn sm danger" data-ids="${g.ids.join(',')}">Убрать</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Замен пока нет.</p>'}</div>
     <details class="card" id="fileCard"><summary><b>Загрузить замены из Excel</b> <span class="muted small">— файл завуча на день</span></summary>
       <p class="muted small" style="margin-top:12px">Файл Excel (.xlsx), лист «Замены» или первый лист. Колонки: Урок, Класс, Предмет, Кабинет, Ответственный учитель, Отсутствует, Примечание. Дата — в строке заголовка блока (например «Замена кабинетов на 17.10.2026»). Номер урока «1-6» или «1, 3» сопоставляется с классами по порядку, «8аб» — один урок для 8А и 8Б. Перед записью показываем проверку. Записываются только даты из файла: замены этих дат, загруженные из файла раньше, заменяются; ручные остаются.</p>
@@ -816,6 +817,31 @@ async function viewSubs() {
     if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно убрать?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Убрать'; }, 4000); return; }
     try { await api('DELETE', '/api/admin/subs', { ids: b.dataset.ids.split(',').map(Number) }); render(); } catch (er) { alert(er.message); }
   };
+  // --- пачка: галочки в таблице и удаление выбранных ---
+  const picks = () => [...document.querySelectorAll('.subpick:checked')];
+  const updPickBar = () => {
+    const btn = document.getElementById('subDel'); if (!btn) return;
+    const n = picks().length, all = document.querySelectorAll('.subpick').length;
+    btn.disabled = !n;
+    btn.textContent = n ? `Удалить выбранные (${n})` : 'Удалить выбранные';
+    const cnt = document.getElementById('subCnt'); if (cnt) cnt.textContent = n ? `выбрано ${n}` : '';
+    const allBox = document.getElementById('subAll'); if (allBox) allBox.checked = n > 0 && n === all;
+  };
+  const viewBox = document.querySelector('#view');
+  viewBox.onchange = e => {
+    const t = e.target;
+    if (t.id === 'subAll') { document.querySelectorAll('.subpick').forEach(i => { i.checked = t.checked; }); updPickBar(); }
+    else if (t.classList && t.classList.contains('subpick')) updPickBar();
+  };
+  const delBtn = document.getElementById('subDel');
+  if (delBtn) delBtn.onclick = async () => {
+    const picked = picks();
+    const ids = picked.flatMap(i => i.dataset.ids.split(',').map(Number));
+    if (!ids.length) return;
+    if (!confirm(`Удалить выбранные замены (${picked.length})? Они исчезнут с экранов.`)) return;
+    try { await api('DELETE', '/api/admin/subs', { ids }); render(); } catch (er) { alert(er.message); }
+  };
+  updPickBar();
 }
 
 // ---------- звонки: сдвиг на сегодня, звонки на дату, действующие изменения ----------
