@@ -715,7 +715,7 @@ async function viewSubs() {
   const list = [...groups.values()];
   const today = todayMsk();
   shell('Замены', `
-    <div class="card"><h2>Добавить замену</h2>
+    <div class="card"><h2 id="sfTitle">Добавить замену</h2>
       <p class="muted small" style="margin-top:0">Выберите дату, урок и классы. Пустые поля берутся из расписания. Чтобы отменить урок, напишите в предмете «отменён».</p>
       <form id="sf2" style="display:grid;gap:14px">
         <div class="row">
@@ -732,11 +732,11 @@ async function viewSubs() {
           <label class="f" style="flex:1;min-width:200px">Примечание<input type="text" id="sn" maxlength="120"></label>
           <datalist id="teachers">${[...new Set(sch.lessons.map(l => l.teacher).filter(Boolean))].sort().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
         </div>
-        <div class="row"><button class="btn primary" type="submit">Добавить замену</button></div></form><div id="sm2" style="margin-top:10px"></div></div>
+        <div class="row"><button class="btn primary" type="submit" id="sfBtn">Добавить замену</button><button class="btn" type="button" id="sfCancel" hidden>Отмена</button></div></form><div id="sm2" style="margin-top:10px"></div></div>
     <div class="card"><h2>Замены (последние 400)</h2>
       ${list.length ? `<div class="tbl-wrap"><table><thead><tr><th>Дата</th><th>Уроки</th><th>Классы</th><th>Предмет</th><th>Кабинет</th><th>Учитель</th><th>Вместо</th><th></th></tr></thead><tbody>
         ${list.map(g => `<tr><td class="num">${esc(g.date.split('-').reverse().join('.'))}</td><td class="num">${esc(g.lessons)}</td><td>${esc(g.cls.join(', '))}</td><td>${esc(g.subject)}${g.note ? `<div class="muted small">${esc(g.note)}</div>` : ''}</td><td>${esc(g.room)}</td><td>${esc(g.teacher)}</td><td>${esc(g.absent)}</td>
-          <td>${me.can.subs ? `<button class="btn sm danger" data-ids="${g.ids.join(',')}">Убрать</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Замен пока нет.</p>'}</div>
+          <td style="white-space:nowrap">${me.can.subs ? `<button class="btn sm" data-edit="${g.ids.join(',')}">Изменить</button> <button class="btn sm danger" data-ids="${g.ids.join(',')}">Убрать</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Замен пока нет.</p>'}</div>
     <details class="card" id="fileCard"><summary><b>Загрузить замены из Excel</b> <span class="muted small">— файл завуча на день</span></summary>
       <p class="muted small" style="margin-top:12px">Файл Excel (.xlsx), лист «Замены» или первый лист. Колонки: Урок, Класс, Предмет, Кабинет, Ответственный учитель, Отсутствует, Примечание. Дата — в строке заголовка блока (например «Замена кабинетов на 17.10.2026»). Номер урока «1-6» или «1, 3» сопоставляется с классами по порядку, «8аб» — один урок для 8А и 8Б. Перед записью показываем проверку. Записываются только даты из файла: замены этих дат, загруженные из файла раньше, заменяются; ручные остаются.</p>
       <div class="row"><label class="f" style="flex:1;min-width:240px">Файл<input type="file" id="sfile" accept=".xlsx"></label>
@@ -767,18 +767,51 @@ async function viewSubs() {
     } catch (er) { msg(sres, er.message); }
   };
 
-  // --- добавить замену: классы выбираются кнопками, список «Классы» собирается в строку для сервера ---
+  // --- добавить или изменить замену: классы выбираются кнопками, список «Классы» собирается в строку для сервера ---
   document.getElementById('sd').value = today;
   const chosen = () => [...document.querySelectorAll('#scBox input:checked')].map(i => i.value);
   document.getElementById('scBox').onchange = () => { const n = chosen().length; document.getElementById('scN').textContent = n ? '· выбрано ' + n : ''; };
-  document.getElementById('sf2').onsubmit = async e => {
+  const sf = document.getElementById('sf2'), sfTitle = document.getElementById('sfTitle'), sfBtn = document.getElementById('sfBtn'), sfCancel = document.getElementById('sfCancel');
+  let editIds = null;
+  const stopEdit = () => {
+    editIds = null; sf.reset(); document.getElementById('sd').value = today;
+    document.getElementById('scN').textContent = '';
+    sfTitle.textContent = 'Добавить замену'; sfBtn.textContent = 'Добавить замену';
+    sfCancel.hidden = true; document.getElementById('sm2').innerHTML = '';
+  };
+  sfCancel.onclick = stopEdit;
+  sf.onsubmit = async e => {
     e.preventDefault(); const m = document.getElementById('sm2');
     const classes = chosen();
     if (!classes.length) return msg(m, 'Выберите хотя бы один класс');
-    try { await api('POST', '/api/admin/subs', { date: document.getElementById('sd').value, lessons: document.getElementById('sl').value, classes: classes.join(', '), subject: document.getElementById('ss').value, room: document.getElementById('sr').value, teacher: document.getElementById('st').value, absent: document.getElementById('sa').value, note: document.getElementById('sn').value }); render(); }
-    catch (er) { msg(m, er.message); }
+    const data = { date: document.getElementById('sd').value, lessons: document.getElementById('sl').value, classes: classes.join(', '), subject: document.getElementById('ss').value, room: document.getElementById('sr').value, teacher: document.getElementById('st').value, absent: document.getElementById('sa').value, note: document.getElementById('sn').value };
+    try {
+      if (editIds) await api('PUT', '/api/admin/subs', { ids: editIds, ...data });
+      else await api('POST', '/api/admin/subs', data);
+      render();
+    } catch (er) { msg(m, er.message); }
   };
   document.querySelector('#view').onclick = async e => {
+    // «Изменить»: заполняем форму выше значениями этой замены и переключаем её в режим правки
+    const eb = e.target.closest('button[data-edit]');
+    if (eb) {
+      const g = list.find(x => x.ids.join(',') === eb.dataset.edit);
+      if (!g) return;
+      editIds = g.ids;
+      document.getElementById('sd').value = g.date;
+      document.getElementById('sl').value = g.lessons;
+      document.getElementById('ss').value = /^урок отменён$/i.test(g.subject) ? 'отменён' : g.subject;
+      document.getElementById('sr').value = g.room;
+      document.getElementById('st').value = g.teacher;
+      document.getElementById('sa').value = g.absent;
+      document.getElementById('sn').value = g.note;
+      document.querySelectorAll('#scBox input').forEach(i => { i.checked = g.cls.includes(i.value); });
+      document.getElementById('scN').textContent = '· выбрано ' + g.cls.length;
+      sfTitle.textContent = 'Изменить замену'; sfBtn.textContent = 'Сохранить изменения';
+      sfCancel.hidden = false;
+      sf.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     const b = e.target.closest('button[data-ids]'); if (!b) return;
     if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Точно убрать?'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Убрать'; }, 4000); return; }
     try { await api('DELETE', '/api/admin/subs', { ids: b.dataset.ids.split(',').map(Number) }); render(); } catch (er) { alert(er.message); }

@@ -122,9 +122,15 @@ const stateObj = () => {
   return { ...s, logo: logo ? '/brand/' + logo : '', logoDark: fs.existsSync(path.join(PUBLIC, 'brand', 'logo-dark.png')) ? '/brand/logo-dark.png' : '' };
 };
 // публичная страница «/»: без фамилии учителя, которого заменили (это данные о здоровье/отсутствии сотрудника)
+const dropAbsent = ({ absent, ...x }) => x;
 const publicStateObj = () => {
   const s = stateObj();
-  return { ...s, substitutions: s.substitutions.map(({ absent, ...x }) => x) };
+  const overlay = {};
+  for (const [d, classes] of Object.entries(s.overlay || {})) {
+    overlay[d] = {};
+    for (const [c, lessons] of Object.entries(classes)) overlay[d][c] = Object.fromEntries(Object.entries(lessons).map(([n, l]) => [n, dropAbsent(l)]));
+  }
+  return { ...s, substitutions: s.substitutions.map(dropAbsent), overlay };
 };
 
 // ---------- загрузка медиа ----------
@@ -241,6 +247,10 @@ async function adminApi(req, res, p, url, user) {
   if (p === '/api/admin/subs' && m === 'POST') {
     if (!need('subs')) return;
     return json(res, 201, SC.addSubs(await readJSON(req), user));
+  }
+  if (p === '/api/admin/subs' && m === 'PUT') {
+    if (!need('subs')) return;
+    return json(res, 200, SC.updateSubs(await readJSON(req), user));
   }
   if (p === '/api/admin/subs' && m === 'DELETE') {
     if (!need('subs')) return;

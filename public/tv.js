@@ -129,8 +129,24 @@ function renderClasses() {
           if (!l) return '<div class="c"></div>';
           const sr = splitRoom(l.subject, l.room), nm = subjName(sr.subject), text = shortKeys.has(nm.key) ? nm.short : nm.full;
           const sur = t => esc(String(t || '').split(' ')[0]);
-          // под предметом — одна строка уточнения: новый учитель и примечание (подгруппа, «вместо …»)
-          const det = l.was ? [l.teacher ? sur(l.teacher) : '', l.note ? `(${esc(l.note)})` : ''].filter(Boolean).join(' ') : '';
+          // «вместо Смирновой»: фамилию ставим в родительный падеж, насколько позволяют правила
+          const gen = t => {
+            const w = String(t || '').split(' ')[0];
+            if (!/[А-Яа-яЁё]$/.test(w)) return w;
+            if (/ая$/i.test(w)) return w.slice(0, -2) + 'ой';
+            if (/а$/i.test(w)) return w.slice(0, -1) + 'ой';
+            if (/я$/i.test(w)) return w.slice(0, -1) + 'ей';
+            if (/й$/i.test(w)) return w.slice(0, -1) + 'я';
+            if (/[бвгджзклмнпрстфхцчшщ]$/i.test(w)) return w + 'а';
+            return w;
+          };
+          // под предметом — одна строка уточнения: кто ведёт, вместо кого и примечание
+          const parts = l.was ? [
+            l.teacher ? sur(l.teacher) : '',
+            l.absent ? 'вместо ' + esc(gen(l.absent)) : '',
+            !l.absent && l.note ? `(${esc(l.note)})` : ''
+          ].filter(Boolean) : [];
+          const det = parts.join(' ');
           return `<div class="c${l.was ? ' chg' : ''}"><div class="ct"><span data-key="${esc2(nm.key)}">${esc(text)}</span>${det ? `<em>${det}</em>` : ''}</div><b>${esc(roomText(sr.room, sr.subject))}</b></div>`;
         }).join('') + '</div></div>';
     }).join('');

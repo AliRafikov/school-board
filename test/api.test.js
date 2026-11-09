@@ -108,6 +108,23 @@ class Client {
   r = await z.req('GET', '/api/admin/subs'); const dayRows = r.j.filter(x => x.date === '2026-12-04');
   r = await z.req('DELETE', '/api/admin/subs', { ids: dayRows.map(x => x.id) }); ok(r.s === 200, 'тестовые замены на дату убраны');
   st0 = await stateJ(); ok(!(st0.overlay || {})['2026-12-04'], 'после удаления экран без замен на дату');
+  {
+    // изменение замены: поля меняются, лишний класс убирается
+    r = await z.req('POST', '/api/admin/subs', { date: '2026-12-05', lessons: '2', classes: '5А, 5Б', subject: 'Чтение', room: '7' });
+    ok(r.s === 201, 'замена создана для двух классов');
+    r = await z.req('GET', '/api/admin/subs');
+    const grp = r.j.filter(x => x.date === '2026-12-05' && x.lessons === '2');
+    ok(grp.length === 2, 'на замену приходится по строке на класс');
+    r = await z.req('PUT', '/api/admin/subs', { ids: grp.map(x => x.id), date: '2026-12-05', lessons: '2', classes: '5А', subject: 'Письмо', room: '9' });
+    ok(r.s === 200, 'замена изменена');
+    r = await z.req('GET', '/api/admin/subs');
+    const grp2 = r.j.filter(x => x.date === '2026-12-05' && x.lessons === '2');
+    ok(grp2.length === 1 && grp2[0].cls === '5А' && grp2[0].subject === 'Письмо' && grp2[0].room === '9', 'после правки остался один класс с новыми полями');
+    r = await z.req('PUT', '/api/admin/subs', { ids: [999999], date: '2026-12-05', lessons: '2', classes: '5А', subject: 'X' });
+    ok(r.s === 404, 'правка несуществующей замены отклонена');
+    r = await z.req('DELETE', '/api/admin/subs', { ids: grp2.map(x => x.id) });
+    ok(r.s === 200, 'тестовая замена убрана');
+  }
 
   // IT: не может трогать директора
   const it = new Client();
