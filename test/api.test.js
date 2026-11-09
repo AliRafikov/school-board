@@ -203,6 +203,13 @@ class Client {
   r = await d.req('PUT', '/api/admin/settings', { look_bg: '#112233', look_font: 500, look_weather: false });
   ok(r.s === 200 && r.j.look_bg === '#112233' && r.j.look_font === '130' && r.j.look_weather === '0', 'оформление сохранено, размер ограничен 130 %');
   st = await stateJ(); ok(st.look && st.look.bg === '#112233' && st.look.weather === false && st.look.font === 130, 'оформление попало на экран');
+  // свой набор цветов для тёмной темы (и ночи) хранится отдельно от светлого
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: 'blue' }); ok(r.s === 400, 'тёмный цвет не в формате #RRGGBB отклонён');
+  r = await z.req('PUT', '/api/admin/settings', { look_dbg: '#102030' }); ok(r.s === 403, 'завуч не меняет цвета тёмной темы');
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: '#102030', look_dpanel: '#203040', look_dtext: '#f0f0f0', look_daccent: '#55aaff' }); ok(r.s === 200, 'цвета тёмной темы сохранены');
+  st = await stateJ(); ok(st.look && st.look.dbg === '#102030' && st.look.daccent === '#55aaff' && st.look.bg === '#112233', 'тёмные цвета на экране отдельно от светлых');
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: '', look_dpanel: '', look_dtext: '', look_daccent: '' });
+  st = await stateJ(); ok(r.s === 200 && st.look.dbg === '' && st.look.daccent === '', 'цвета тёмной темы сброшены к стандартным');
   r = await d.req('PUT', '/api/admin/settings', { look_bg: '', look_font: 100, look_weather: true });
   st = await stateJ(); ok(st.look && st.look.bg === '' && st.look.weather === true, 'оформление сброшено к стандартному');
   // каникулы: обе даты или ни одной; «по» не раньше «с»; сегодня в каникулах — на экране название и дата возвращения
@@ -215,8 +222,17 @@ class Client {
   r = await d.req('PUT', '/api/admin/settings', { holiday_from: '', holiday_to: '', holiday_title: '' });
   st = await stateJ(); ok(r.s === 200 && !st.holiday, 'каникулы сняты, экран снова показывает расписание');
   r = await d.req('PUT', '/api/admin/settings', { night_from: '9pm' }); ok(r.s === 400, 'неверное время ночи отклонено');
-  r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
-  r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' }); ok(r.s === 200, 'тема возвращена в «авто»');
+  r = await d.req('PUT', '/api/admin/settings', { night_mode: 'dim' }); ok(r.s === 400, 'неизвестный ночной режим отклонён');
+  // тема днём и ночной режим независимы: тёмная тема + чёрный экран ночью
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'dark', night_mode: 'screen', night_from: '21:00', night_to: '07:00' }); ok(r.s === 200, 'тема и ночь сохранены');
+  st = await stateJ(); ok(st.theme === 'dark' && st.nightMode === 'screen', 'тёмная тема вместе с ночным экраном попала на экран');
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'light', night_mode: 'dark' });
+  st = await stateJ(); ok(r.s === 200 && st.theme === 'light' && st.nightMode === 'dark', 'светлая днём и тёмное расписание ночью');
+  r = await d.req('PUT', '/api/admin/settings', { night_mode: 'same' });
+  st = await stateJ(); ok(r.s === 200 && st.nightMode === 'same', 'ночной режим «как днём»');
+  // старое значение «auto» (устаревшая страница админки) превращается в светлую тему с чёрным ночным экраном
+  r = await d.req('PUT', '/api/admin/settings', { theme: 'auto' });
+  st = await stateJ(); ok(r.s === 200 && st.theme === 'light' && st.nightMode === 'screen', 'старое «авто» → светлая днём, чёрный экран ночью');
   const wx = await fetch(BASE + '/api/weather'); const wj = await wx.json().catch(() => null);
   ok(wx.status === 200 && wj && typeof wj === 'object' && !('error' in wj), 'погода отвечает без ошибки сервера (данные или пусто, если нет сети)');
 
