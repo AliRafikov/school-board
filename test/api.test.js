@@ -23,6 +23,8 @@ class Client {
   r = await d.req('POST', '/api/auth/login', { login: 'director', password: process.env.PASS }); ok(r.s === 200 && r.j.must_change, 'вход директора, требуется смена пароля');
   r = await d.req('GET', '/api/admin/overview'); ok(r.s === 403, 'до смены пароля админка закрыта (403)');
   r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: 'short' }); ok(r.s === 400, 'слабый пароль отклонён');
+  r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: 'Abcdefg1234' }); ok(r.s === 400, 'пароль короче 12 символов отклонён');
+  r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: 'password1234' }); ok(r.s === 400, 'частый пароль отклонён');
   const NEWPW = 'Licey24-secure';
   r = await d.req('POST', '/api/auth/password', { old: process.env.PASS, new: NEWPW }); ok(r.s === 200, 'пароль сменён');
   ADMIN_COOKIE = d.cookie;
@@ -71,6 +73,16 @@ class Client {
     r = await h.req('GET', '/api/admin/users'); ok(r.s === 403, 'помощнику закрыты пользователи');
     r = await h.req('GET', '/api/admin/audit'); ok(r.s === 403, 'помощнику закрыт журнал');
     r = await d.req('DELETE', '/api/admin/media/' + hid); ok(r.s === 200, 'директор убирает постер помощника');
+    // чужое помощник не трогает — ни постер, ни объявление
+    r = await d.req('POST', '/api/admin/media/upload', hpng, { 'X-File-Name': encodeURIComponent('Афиша директора.png'), 'Content-Type': 'application/octet-stream' }); ok(r.s === 201, 'директор загрузил свой постер');
+    const did = r.j && r.j.id;
+    r = await h.req('DELETE', '/api/admin/media/' + did); ok(r.s === 403, 'помощник не удаляет чужой постер');
+    r = await h.req('PATCH', '/api/admin/media/' + did, { duration: 20 }); ok(r.s === 403, 'помощник не меняет чужой постер');
+    r = await d.req('DELETE', '/api/admin/media/' + did); ok(r.s === 200, 'директор убрал свой постер');
+    r = await d.req('POST', '/api/admin/announcements', { title: 'Объявление директора', duration: 10, priority: 1 }); const aid = r.j && r.j.id;
+    r = await h.req('DELETE', '/api/admin/announcements/' + aid); ok(r.s === 403, 'помощник не удаляет чужое объявление');
+    r = await h.req('PATCH', '/api/admin/announcements/' + aid, { title: 'подмена' }); ok(r.s === 403, 'помощник не меняет чужое объявление');
+    r = await d.req('DELETE', '/api/admin/announcements/' + aid); ok(r.s === 200, 'директор убрал своё объявление');
   }
   r = await d.req('POST', '/api/admin/users', { login: 'x', name: 'x', role: 'viewer' }); ok(r.s === 400, 'короткий логин отклонён');
 

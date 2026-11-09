@@ -43,11 +43,29 @@ const uid = db.prepare("SELECT id FROM users WHERE login='ivanova'").get().id;
   await TGB.onCallback({ id: 'c3', data: 'no:' + login3, from: { id: 111 }, message: { chat: { id: 1 }, message_id: 9 } });
   ok(TGB.findCode(login3, 'login').status === 'denied', 'кнопка «Нет» отклоняет вход');
 
-  // 5. отвязка
+  // 5. постеры из Telegram: большие файлы не скачиваются, заваливание ограничено
+  TGB.setSender(async (m, b) => {
+    sent.push([m, b]);
+    if (m === 'getFile') return { file_size: 50 * 1024 * 1024, file_path: 'big.jpg' };
+    return m === 'sendMessage' ? { message_id: 10 } : true;
+  }, async () => { throw new Error('файл не должен скачиваться'); });
+  await TGB.onMedia({ chat: { id: 1 }, from: { id: 111 }, document: { file_id: 'f1', mime_type: 'image/jpeg', file_name: 'big.jpg' } });
+  ok(/больше/.test(sent.at(-1)[1].text), 'слишком большой файл из Telegram не скачивается');
+
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  TGB.setSender(async (m, b) => {
+    sent.push([m, b]);
+    if (m === 'getFile') return { file_size: png.length, file_path: 'p.png' };
+    return m === 'sendMessage' ? { message_id: 11 } : true;
+  }, async () => png);
+  for (let i = 0; i < 13; i++) await TGB.onMedia({ chat: { id: 1 }, from: { id: 111 }, photo: [{ file_id: 'p' + i }] });
+  ok(/Слишком много/.test(sent.at(-1)[1].text), 'заваливание постерами ограничено');
+
+  // 6. отвязка
   await TGB.onUnlink({ chat: { id: 1 }, from: { id: 111 }, text: '/unlink' });
   ok(db.prepare('SELECT tg_id FROM users WHERE id=?').get(uid).tg_id === null, '/unlink отвязывает Telegram');
 
-  // 6. пароль работает как раньше
+  // 7. пароль работает как раньше
   ok(A.login('ivanova', 'Pass12345', '1.1.1.1').token !== undefined, 'вход по паролю не сломан');
   console.log(process.exitCode ? 'ЕСТЬ ОШИБКИ' : 'ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ');
 })();

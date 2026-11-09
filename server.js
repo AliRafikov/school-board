@@ -81,6 +81,8 @@ function pingAllowed(key, limit = 120) {
   hits.push(now); pingHits.set(key, hits); return true;
 }
 const PING_PER_SCREEN = 20, PING_PER_ADDR = 600; // экран шлёт ~4 запроса в минуту
+// сколько раз в минуту можно запрашивать данные экрана: один экран — 4 раза (раз в 15 с), плюс запас
+const STATE_PER_SCREEN = 120, STATE_PER_ADDR = 900, PUBLIC_STATE_PER_ADDR = 600;
 // ---- привязка экрана: код на телевизоре → подтверждение в админке → секретная cookie на телевизоре ----
 // ожидающие привязки живут в памяти 10 минут; секрет хранится в базе только как хэш
 const pairByCode = new Map(), pairByScreen = new Map();
@@ -237,13 +239,14 @@ async function adminApi(req, res, p, url, user) {
     return json(res, 201, SC.saveAnnouncement(0, await readJSON(req), user));
   }
   const an = /^\/api\/admin\/announcements\/(\d+)$/.exec(p);
-  if (an && m === 'PATCH') {
+  if (an) {
     if (!need('announcements')) return;
-    return json(res, 200, SC.saveAnnouncement(Number(an[1]), await readJSON(req), user));
-  }
-  if (an && m === 'DELETE') {
-    if (!need('announcements')) return;
-    return json(res, 200, SC.deleteAnnouncement(Number(an[1]), user));
+    const arow = db.prepare('SELECT * FROM announcements WHERE id=?').get(Number(an[1]));
+    if (!arow) return fail(res, 404, 'Объявление не найдено');
+    // помощник (старшеклассник) правит и убирает только то, что опубликовал сам
+    if (user.role === 'helper' && arow.created_by !== user.name) return fail(res, 403, 'Помощник может менять только свои объявления');
+    if (m === 'PATCH') return json(res, 200, SC.saveAnnouncement(Number(an[1]), await readJSON(req), user));
+    if (m === 'DELETE') return json(res, 200, SC.deleteAnnouncement(Number(an[1]), user));
   }
   if (p === '/api/admin/refresh-screens' && m === 'POST') {
     if (!need('screens')) return;
@@ -471,6 +474,8 @@ async function adminApi(req, res, p, url, user) {
     if (!need('media')) return;
     const id = Number(mm[1]), row = db.prepare('SELECT * FROM media WHERE id=?').get(id);
     if (!row) return fail(res, 404, 'Файл не найден');
+    // помощник трогает только свои файлы — так же, как в Telegram-боте
+    if (user.role === 'helper' && row.created_by !== user.name) return fail(res, 403, 'Помощник может менять только свои постеры');
     if (m === 'PATCH') {
       const b = await readJSON(req);
       const df = 'date_from' in b ? String(b.date_from) : row.date_from, dt = 'date_to' in b ? String(b.date_to) : row.date_to;
@@ -526,11 +531,17 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { status: 'ok' }, { 'Set-Cookie': screenCookie(e.token, req) });
     }
     if (p === '/api/state') {
-      if (!viewerOk(req)) return fail(res, 401, 'Нужна привязка экрана');
+      const sid = screenIdFromReq(req), viewer = sid ? null : A.userFromReq(req);
+      if (!sid && !viewer) return fail(res, 401, 'Нужна привязка экрана');
+      if (!pingAllowed(sid ? 'st:s:' + sid : 'st:u:' + viewer.id, STATE_PER_SCREEN) || !pingAllowed('st:a:' + ip(req), STATE_PER_ADDR))
+        return fail(res, 429, 'Слишком часто');
       return json(res, 200, stateObj());
     }
     // публичная страница расписания «/» — прежние данные без привязки
-    if (p === '/api/public/state') return json(res, 200, publicStateObj());
+    if (p === '/api/public/state') {
+      if (!pingAllowed('pst:a:' + ip(req), PUBLIC_STATE_PER_ADDR)) return fail(res, 429, 'Слишком часто');
+      return json(res, 200, publicStateObj());
+    }
     if (p === '/api/health') return json(res, 200, { ok: true, version: S.getState().version });
     if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (p === '/api/ping' && req.method === 'POST') { // привязанный экран сообщает, что он жив; без привязки не считается
@@ -602,9 +613,10 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/')) return fail(res, 404, 'Нет такого метода');
 
     // страницы
-    let rel = p === '/' ? '/index.html' : p === '/tv' ? '/tv.html' : (p === '/admin' || p === '/admin/') ? '/admin.html' : p;
+    const rel = p === '/' ? '/index.html' : p === '/tv' ? '/tv.html' : (p === '/admin' || p === '/admin/') ? '/admin.html' : p;
     const f = path.normalize(path.join(PUBLIC, rel));
-    if (!f.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+    const inside = path.relative(PUBLIC, f); // файлы только из public, «..» наружу не пускаем
+    if (inside.startsWith('..') || path.isAbsolute(inside)) { res.writeHead(403); return res.end(); }
     serveFile(req, res, f, 'no-cache');
   } catch (e) {
     if (!res.headersSent) fail(res, typeof e.code === 'number' ? e.code : 500, typeof e.code === 'number' ? e.message : 'Внутренняя ошибка');

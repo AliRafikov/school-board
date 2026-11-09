@@ -1,3 +1,5 @@
 data/
 node_modules/
 backups/
+# токен бота — только локально, в git не попадает
+start-bot.bat
