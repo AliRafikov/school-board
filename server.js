@@ -349,7 +349,7 @@ async function adminApi(req, res, p, url, user) {
       for (const k of ['night_from', 'night_to']) if (k in b) { if (!/^\d{2}:\d{2}$/.test(String(b[k]))) return fail(res, 400, 'Время ночи в формате ЧЧ:ММ'); upd[k] = String(b[k]); }
       if ('school_name' in b) upd.school_name = String(b.school_name).trim().slice(0, 80) || before.school_name;
       // оформление экрана: цвета #RRGGBB или пусто (стандартный), размер таблицы 80–130 %, переключатели показа
-      for (const k of ['look_bg', 'look_panel', 'look_text', 'look_accent']) if (k in b) {
+      for (const k of ['look_bg', 'look_panel', 'look_text', 'look_accent', 'look_dbg', 'look_dpanel', 'look_dtext', 'look_daccent']) if (k in b) {
         const v = String(b[k] || '').trim();
         if (v && !/^#[0-9a-fA-F]{6}$/.test(v)) return fail(res, 400, 'Цвет в формате #RRGGBB или пусто');
         upd[k] = v;

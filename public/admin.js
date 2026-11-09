@@ -982,10 +982,15 @@ const VIEWS = { overview: viewOverview, schedule: viewSchedule, subs: viewSubs, 
 // Всё, что меняет вид экрана в холле, в одном месте: тема и ночь, цвета, что показывать, размер таблицы, режим показа.
 // Справа живой предпросмотр: изменения видны сразу, на настоящих экранах они появятся после сохранения.
 const LOOK_DEFAULT = { bg: '#d9dde4', panel: '#f1f3f6', text: '#1f2330', accent: '#db4755' };
+const LOOK_DEFAULT_D = { bg: '#0f1116', panel: '#1b1e26', text: '#e9ebf0', accent: '#ef6470' };   // тёмная тема и ночь
+const LOOK_KEYS = ['bg', 'panel', 'text', 'accent'];
 const LOOK_COLORS = [['bg', 'Фон', 'за блоками'], ['panel', 'Блоки', 'шапка, звонки, таблица'], ['text', 'Текст', 'предметы и время'], ['accent', 'Акцент', 'замены, текущий урок']];
 const LOOK_PRESETS = [['Лицей', {}], ['Синий', { bg: '#dbe4ef', panel: '#f3f7fc', text: '#1b2433', accent: '#2f6fd6' }],
   ['Зелёный', { bg: '#dce6df', panel: '#f2f7f3', text: '#1d2a22', accent: '#1f8a5b' }], ['Графит', { bg: '#d8d8dc', panel: '#f0f0f2', text: '#202126', accent: '#4b5563' }],
   ['Бордо', { bg: '#e6dcdd', panel: '#f7f1f1', text: '#2a1d1f', accent: '#9b2335' }]];
+const LOOK_PRESETS_D = [['Лицей', {}], ['Синий', { bg: '#0d1420', panel: '#162235', text: '#e6edf7', accent: '#5b9cf5' }],
+  ['Зелёный', { bg: '#0e1612', panel: '#17241d', text: '#e5f0e9', accent: '#3fc08a' }], ['Графит', { bg: '#121214', panel: '#1f2023', text: '#ececee', accent: '#9aa3b2' }],
+  ['Бордо', { bg: '#160e10', panel: '#26171a', text: '#f3e8ea', accent: '#e0566b' }]];
 const LOOK_MODES = [['auto', 'Авто', 'На уроках экран спокойный: логотип и QR-баннеры. На переменах всё как обычно: постеры и ролики.'],
   ['static', 'Всегда спокойный', 'Для гостей и мероприятий: постеры и ролики на весь экран не идут.'],
   ['active', 'Всегда с роликами', 'Постеры и ролики идут и во время уроков.']];
@@ -1002,11 +1007,17 @@ async function viewLook() {
   const from = {
     theme: s.theme === 'dark' ? 'dark' : 'light', night_mode: ['same', 'dark', 'screen'].includes(s.night_mode) ? s.night_mode : 'screen', night_from: s.night_from || '21:00', night_to: s.night_to || '07:00', display_mode: s.display_mode || 'auto',
     bg: s.look_bg || '', panel: s.look_panel || '', text: s.look_text || '', accent: s.look_accent || '',
+    dbg: s.look_dbg || '', dpanel: s.look_dpanel || '', dtext: s.look_dtext || '', daccent: s.look_daccent || '',
     font: Number(s.look_font) || 100, weather: s.look_weather !== '0', bells: s.look_bells !== '0', banners: s.look_banners !== '0'
   };
-  const STANDARD = { theme: 'light', night_mode: 'screen', night_from: '21:00', night_to: '07:00', display_mode: 'auto', bg: '', panel: '', text: '', accent: '', font: 100, weather: true, bells: true, banners: true };
+  const STANDARD = { theme: 'light', night_mode: 'screen', night_from: '21:00', night_to: '07:00', display_mode: 'auto', bg: '', panel: '', text: '', accent: '', dbg: '', dpanel: '', dtext: '', daccent: '', font: 100, weather: true, bells: true, banners: true };
   let cur = { ...from }, previewNight = false, saved = { ...from };
-  const val = k => cur[k] || LOOK_DEFAULT[k];
+  // какой набор цветов правим: светлой темы или тёмной (тёмная — ещё и ночью); previewTheme заставляет предпросмотр показать этот набор
+  let editDark = from.theme === 'dark', previewTheme = null;
+  const pk = k => (editDark ? 'd' : '') + k;                       // имя поля в настройках: bg или dbg
+  const defs = () => editDark ? LOOK_DEFAULT_D : LOOK_DEFAULT;
+  const presets = () => editDark ? LOOK_PRESETS_D : LOOK_PRESETS;
+  const val = k => cur[pk(k)] || defs()[k];
   shell('Оформление', `
     <div class="look-grid">
       <div class="look-col">
@@ -1016,11 +1027,13 @@ async function viewLook() {
           <div class="f" style="margin-top:16px"><span class="muted small" style="font-weight:600">Ночью</span></div>
           <div class="optlist" role="radiogroup" aria-label="Ночной режим">${LOOK_NIGHTS.map(([v, t, d]) => `<label class="opt"><input type="radio" name="lkNightMode" value="${v}"><span><b>${t}</b><span class="muted small">${d}</span></span></label>`).join('')}</div>
           <div class="row" id="lkNight" style="margin-top:10px"><label class="f">Ночь с<input type="time" id="lkNf" style="width:130px"></label><label class="f">до<input type="time" id="lkNt" style="width:130px"></label></div></div>
-        <div class="card"><h2>Цвета светлой темы</h2>
-          <div class="presets-look" id="lkPresets">${LOOK_PRESETS.map(([n, c], i) => { const d = { ...LOOK_DEFAULT, ...c }; return `<button type="button" class="preset-look" data-p="${i}" aria-pressed="false"><span class="dots"><i style="background:${d.bg}"></i><i style="background:${d.panel}"></i><i style="background:${d.accent}"></i></span>${n}</button>`; }).join('')}</div>
+        <div class="card"><h2>Цвета экрана</h2>
+          <div class="seg seg-wide" id="lkPal" role="group" aria-label="Какую тему настраиваем">${[['0', 'Светлая тема'], ['1', 'Тёмная тема']].map(([v, l]) => `<button type="button" data-pal="${v}">${l}</button>`).join('')}</div>
+          <p class="muted small" id="lkPalHint" style="margin:8px 0 12px"></p>
+          <div class="presets-look" id="lkPresets"></div>
           ${LOOK_COLORS.map(([k, l, h]) => `<div class="colorrow"><label for="lkc_${k}"><b>${l}</b><span class="muted small">${h}</span></label><input type="color" id="lkc_${k}" data-c="${k}"><button class="btn sm" type="button" data-reset="${k}">Стандартный</button></div>`).join('')}
           <div id="lkContrast"></div>
-          <p class="muted small" style="margin:10px 0 0">Тёмная тема и ночной экран остаются тёмными.</p></div>
+          <p class="muted small" style="margin:10px 0 0">Тёмные цвета действуют и ночью, если ночью выбрано «Тёмное расписание» или «Чёрный экран».</p></div>
         <div class="card"><h2>Что показывать</h2>
           <label class="check"><input type="checkbox" data-t="weather"> Погода в шапке</label>
           <label class="check"><input type="checkbox" data-t="bells"> Расписание звонков справа</label>
@@ -1043,8 +1056,9 @@ async function viewLook() {
 
   const push = () => {
     const w = frame.contentWindow; if (!w || typeof w.previewSettings !== 'function') return false;
-    w.previewSettings({ theme: cur.theme, nightMode: cur.night_mode, nightFrom: cur.night_from, nightTo: cur.night_to, displayMode: cur.display_mode, previewNight: cur.night_mode !== 'same' ? previewNight : null,
-      look: { bg: cur.bg, panel: cur.panel, text: cur.text, accent: cur.accent, font: cur.font, weather: cur.weather, bells: cur.bells, banners: cur.banners } });
+    w.previewSettings({ theme: previewTheme || cur.theme, nightMode: previewTheme ? 'same' : cur.night_mode, nightFrom: cur.night_from, nightTo: cur.night_to, displayMode: cur.display_mode,
+      previewNight: previewTheme ? null : (cur.night_mode !== 'same' ? previewNight : null),
+      look: { bg: cur.bg, panel: cur.panel, text: cur.text, accent: cur.accent, dbg: cur.dbg, dpanel: cur.dpanel, dtext: cur.dtext, daccent: cur.daccent, font: cur.font, weather: cur.weather, bells: cur.bells, banners: cur.banners } });
     return true;
   };
   // страница в рамке загружает данные не сразу: пробуем несколько раз
@@ -1056,8 +1070,15 @@ async function viewLook() {
     $q('lkNight').hidden = cur.night_mode === 'same'; $q('lkDayNight').hidden = cur.night_mode === 'same';
     $q('lkNf').value = cur.night_from; $q('lkNt').value = cur.night_to;
     document.querySelectorAll('#lkDayNight [data-n]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.n === '1') === previewNight)));
-    LOOK_COLORS.forEach(([k]) => { $q('lkc_' + k).value = val(k); document.querySelector(`[data-reset="${k}"]`).hidden = !cur[k]; });
-    document.querySelectorAll('#lkPresets [data-p]').forEach(b => { const c = { ...LOOK_DEFAULT, ...LOOK_PRESETS[b.dataset.p][1] }; b.setAttribute('aria-pressed', String(LOOK_COLORS.every(([k]) => val(k).toLowerCase() === c[k]))); });
+    document.querySelectorAll('#lkPal [data-pal]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.pal === '1') === editDark)));
+    $q('lkPalHint').textContent = editDark ? 'Тёмная тема днём и тёмный экран ночью.' : 'Светлая тема днём.';
+    $q('lkPresets').innerHTML = presets().map(([n, c], i) => { const d = { ...defs(), ...c }; return `<button type="button" class="preset-look" data-p="${i}" aria-pressed="false"><span class="dots"><i style="background:${d.bg}"></i><i style="background:${d.panel}"></i><i style="background:${d.accent}"></i></span>${n}</button>`; }).join('');
+    document.querySelectorAll('#lkPresets [data-p]').forEach(b => {
+      const c = { ...defs(), ...presets()[b.dataset.p][1] };
+      b.setAttribute('aria-pressed', String(LOOK_COLORS.every(([k]) => val(k).toLowerCase() === c[k])));
+      b.onclick = () => set(Object.fromEntries(LOOK_KEYS.map(k => [pk(k), presets()[b.dataset.p][1][k] || ''])));
+    });
+    LOOK_COLORS.forEach(([k]) => { $q('lkc_' + k).value = val(k); document.querySelector(`[data-reset="${k}"]`).hidden = !cur[pk(k)]; });
     const warn = [];
     if (contrastOf(val('text'), val('panel')) < 4.5) warn.push('Текст плохо читается на блоках: сделайте его темнее или блоки светлее.');
     if (contrastOf(val('text'), val('bg')) < 3) warn.push('Текст почти сливается с фоном.');
@@ -1075,25 +1096,27 @@ async function viewLook() {
   };
   const set = patch => { Object.assign(cur, patch); sync(); };
 
-  document.querySelectorAll('#lkTheme [data-th]').forEach(b => b.onclick = () => set({ theme: b.dataset.th }));
+  document.querySelectorAll('#lkTheme [data-th]').forEach(b => b.onclick = () => { previewTheme = null; editDark = b.dataset.th === 'dark'; set({ theme: b.dataset.th }); });
   document.querySelectorAll('input[name=lkNightMode]').forEach(r => r.onchange = () => set({ night_mode: r.value }));
-  document.querySelectorAll('#lkDayNight [data-n]').forEach(b => b.onclick = () => { previewNight = b.dataset.n === '1'; sync(); });
+  document.querySelectorAll('#lkDayNight [data-n]').forEach(b => b.onclick = () => { previewNight = b.dataset.n === '1'; previewTheme = null; sync(); });
   $q('lkNf').onchange = e => { if (e.target.value) set({ night_from: e.target.value }); else sync(); };
   $q('lkNt').onchange = e => { if (e.target.value) set({ night_to: e.target.value }); else sync(); };
-  document.querySelectorAll('#lkPresets [data-p]').forEach(b => b.onclick = () => set({ bg: '', panel: '', text: '', accent: '', ...LOOK_PRESETS[b.dataset.p][1] }));
+  // выбор набора цветов: предпросмотр сразу показывает соответствующую тему
+  document.querySelectorAll('#lkPal [data-pal]').forEach(b => b.onclick = () => { editDark = b.dataset.pal === '1'; previewTheme = editDark ? 'dark' : 'light'; sync(); });
   // пока человек двигает выбор цвета, обновляем только предпросмотр; запись в настройки — когда выбор закончен
-  document.querySelectorAll('input[data-c]').forEach(i => { i.oninput = () => { cur[i.dataset.c] = i.value; push(); }; i.onchange = () => set({ [i.dataset.c]: i.value }); });
-  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => set({ [b.dataset.reset]: '' }));
+  document.querySelectorAll('input[data-c]').forEach(i => { i.oninput = () => { cur[pk(i.dataset.c)] = i.value; push(); }; i.onchange = () => set({ [pk(i.dataset.c)]: i.value }); });
+  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => set({ [pk(b.dataset.reset)]: '' }));
   document.querySelectorAll('[data-t]').forEach(c => c.onchange = () => set({ [c.dataset.t]: c.checked }));
   $q('lkFont').oninput = e => { cur.font = Number(e.target.value); $q('lkFontO').textContent = cur.font + '%'; push(); };
   $q('lkFont').onchange = e => set({ font: Number(e.target.value) });
   document.querySelectorAll('input[name=lkMode]').forEach(r => r.onchange = () => set({ display_mode: r.value }));
-  $q('lkReset').onclick = () => set({ ...STANDARD });
+  $q('lkReset').onclick = () => { previewTheme = null; editDark = STANDARD.theme === 'dark'; set({ ...STANDARD }); };
   $q('lkSave').onclick = async () => {
     const m = $q('lookMsg'), btn = $q('lkSave'); btn.disabled = true;
     try {
       await api('PUT', '/api/admin/settings', { theme: cur.theme, night_mode: cur.night_mode, night_from: cur.night_from, night_to: cur.night_to, display_mode: cur.display_mode,
-        look_bg: cur.bg, look_panel: cur.panel, look_text: cur.text, look_accent: cur.accent, look_font: cur.font, look_weather: cur.weather, look_bells: cur.bells, look_banners: cur.banners });
+        look_bg: cur.bg, look_panel: cur.panel, look_text: cur.text, look_accent: cur.accent,
+        look_dbg: cur.dbg, look_dpanel: cur.dpanel, look_dtext: cur.dtext, look_daccent: cur.daccent, look_font: cur.font, look_weather: cur.weather, look_bells: cur.bells, look_banners: cur.banners });
       saved = { ...cur }; sync(); msg(m, 'Сохранено. Экраны в холле обновятся в течение минуты.', 'ok'); setTimeout(() => msg(m, ''), 4000);
     } catch (er) { msg(m, er.message); sync(); }
   };

@@ -203,6 +203,13 @@ class Client {
   r = await d.req('PUT', '/api/admin/settings', { look_bg: '#112233', look_font: 500, look_weather: false });
   ok(r.s === 200 && r.j.look_bg === '#112233' && r.j.look_font === '130' && r.j.look_weather === '0', 'оформление сохранено, размер ограничен 130 %');
   st = await stateJ(); ok(st.look && st.look.bg === '#112233' && st.look.weather === false && st.look.font === 130, 'оформление попало на экран');
+  // свой набор цветов для тёмной темы (и ночи) хранится отдельно от светлого
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: 'blue' }); ok(r.s === 400, 'тёмный цвет не в формате #RRGGBB отклонён');
+  r = await z.req('PUT', '/api/admin/settings', { look_dbg: '#102030' }); ok(r.s === 403, 'завуч не меняет цвета тёмной темы');
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: '#102030', look_dpanel: '#203040', look_dtext: '#f0f0f0', look_daccent: '#55aaff' }); ok(r.s === 200, 'цвета тёмной темы сохранены');
+  st = await stateJ(); ok(st.look && st.look.dbg === '#102030' && st.look.daccent === '#55aaff' && st.look.bg === '#112233', 'тёмные цвета на экране отдельно от светлых');
+  r = await d.req('PUT', '/api/admin/settings', { look_dbg: '', look_dpanel: '', look_dtext: '', look_daccent: '' });
+  st = await stateJ(); ok(r.s === 200 && st.look.dbg === '' && st.look.daccent === '', 'цвета тёмной темы сброшены к стандартным');
   r = await d.req('PUT', '/api/admin/settings', { look_bg: '', look_font: 100, look_weather: true });
   st = await stateJ(); ok(st.look && st.look.bg === '' && st.look.weather === true, 'оформление сброшено к стандартному');
   // каникулы: обе даты или ни одной; «по» не раньше «с»; сегодня в каникулах — на экране название и дата возвращения
