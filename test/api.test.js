@@ -49,6 +49,7 @@ class Client {
     rr = await tv.req('POST', '/api/pair/claim', { id: 'tvtest-01' }); ok(rr.j.status !== 'ok', 'без нового кода cookie не выдаётся');
   }
   r = await d.req('GET', '/api/admin/overview'); ok(r.s === 200 && r.j.sync, 'обзор доступен после смены пароля');
+  ok(r.j.build && r.j.build.started > 0 && typeof r.j.build.stale === 'boolean', 'обзор сообщает, какой код запущен и не устарел ли он');
 
   r = await d.req('POST', '/api/admin/users', { login: 'it1', name: 'Айдар (IT)', role: 'it' }); ok(r.s === 201 && r.j.temp_password, 'создан IT-администратор');
   const itPw = r.j.temp_password;

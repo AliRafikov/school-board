@@ -14,6 +14,25 @@ const HOST = process.env.HOST || '0.0.0.0';                       // на сер
 const PUBLIC = path.join(__dirname, 'public');
 const M = require('./lib/media');
 
+// ---- какая версия кода сейчас работает ----
+// STARTED — момент запуска процесса; код на диске новее запуска значит, что сервер надо перезапустить.
+const STARTED = Date.now();
+const SERVER_FILES = [path.join(__dirname, 'server.js'), ...fs.readdirSync(path.join(__dirname, 'lib')).filter(f => f.endsWith('.js')).map(f => path.join(__dirname, 'lib', f))];
+// короткий отпечаток кода: git-коммит, а если git недоступен (сервер без .git) — хэш самих файлов
+const BUILD_ID = (() => {
+  try {
+    const id = require('child_process').execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).toString().trim();
+    if (id) return id;
+  } catch { /* git не установлен или недоступен */ }
+  try {
+    const h = crypto.createHash('sha1');
+    for (const f of SERVER_FILES) h.update(fs.readFileSync(f));
+    return 'h' + h.digest('hex').slice(0, 7);
+  } catch { return ''; }
+})();
+function codeTime() { let t = 0; for (const f of SERVER_FILES) { try { t = Math.max(t, fs.statSync(f).mtimeMs); } catch { /* файла нет */ } } return t; }
+const buildInfo = () => { const code = codeTime(); return { id: BUILD_ID, code, started: STARTED, stale: code > STARTED + 2000 }; };
+
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.mp4': 'video/mp4', '.pdf': 'application/pdf', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
@@ -133,7 +152,7 @@ async function adminApi(req, res, p, url, user) {
     const clearUntil = Number(getSetting('clear_until')) || 0;
     const shiftNow = getSetting('shift_date') === todayNow && Number(getSetting('shift_minutes')) > 0;
     return json(res, 200, {
-      mode: S.mode(), sync: S.status(), screen_theme: getSetting('theme') || 'auto',
+      mode: S.mode(), sync: S.status(), screen_theme: getSetting('theme') || 'auto', build: buildInfo(),
       status: {
         urgent: urgentNow ? { title: urgentNow, source: getSetting('urgent_source') || '', since: Number(getSetting('urgent_since')) || 0 } : null,
         clear: clearUntil > now ? { title: getSetting('clear_title') || '', until: clearUntil } : null,
@@ -542,7 +561,7 @@ const server = http.createServer(async (req, res) => {
       if (!pingAllowed('pst:a:' + ip(req), PUBLIC_STATE_PER_ADDR)) return fail(res, 429, 'Слишком часто');
       return json(res, 200, publicStateObj());
     }
-    if (p === '/api/health') return json(res, 200, { ok: true, version: S.getState().version });
+    if (p === '/api/health') return json(res, 200, { ok: true, version: S.getState().version, build: BUILD_ID, started: STARTED });
     if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (p === '/api/ping' && req.method === 'POST') { // привязанный экран сообщает, что он жив; без привязки не считается
       const id = screenIdFromReq(req);

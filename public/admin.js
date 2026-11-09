@@ -216,6 +216,7 @@ async function viewOverview() {
   const o = await api('GET', '/api/admin/overview');
   const s = o.sync, st = o.status;
   const t2 = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const tdt = ts => new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const canAnn = me.can.urgent; // включать и снимать срочное сообщение может не каждая роль (помощнику нельзя)
   const offline = st.screens_offline.filter(x => x.id);
   // тему экрана видят и меняют директор, IT и завуч (её значение приходит вместе с обзором)
@@ -249,6 +250,8 @@ async function viewOverview() {
       <div class="stat"><div class="v">${st.subs_today}</div><div class="l">замен на сегодня</div></div>
       <div class="stat"><div class="v">${o.counts.media}</div><div class="l">постеров и видео в показе</div></div>
     </div>
+    ${o.build.stale ? `<div class="msg warn" style="margin-top:12px">Код в папке новее, чем запущенный сервер: часть изменений ещё не работает. Закройте окно панели и запустите её снова.</div>` : ''}
+    <p class="muted small" style="margin:10px 2px 0">Версия ${o.build.id ? esc(o.build.id) : 'без git'} · код от ${tdt(o.build.code)} · сервер запущен ${tdt(o.build.started)}</p>
     ${scfg ? `<div class="card screen-theme"><div><h2>Тема экрана</h2><p class="muted small" style="margin:4px 0 0">«Авто» — светлая днём, ночью чёрная с временем и логотипом</p></div>
       <div class="seg seg-wide" id="sTheme">${[['auto', 'Авто'], ['light', 'Светлая'], ['dark', 'Тёмная']].map(([v, l]) => `<button type="button" data-st="${v}" aria-pressed="${stheme === v}">${l}</button>`).join('')}</div></div>` : ''}
     <div class="card"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:14px"><div><h2 style="margin:0">Так видит экран</h2><p class="muted small" style="margin:4px 0 0">Копия телевизора, обновляется вместе с ним</p></div><a class="btn sm" href="/tv" target="_blank" rel="noopener">Во весь экран</a></div>
