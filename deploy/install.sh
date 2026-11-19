@@ -88,6 +88,7 @@ mkdir -p "$APP/public/brand"
 cp -an "$BRAND_KEEP/." "$APP/public/brand/" 2>/dev/null || true   # файлы из нового релиза важнее старых
 rm -rf "$BRAND_KEEP"
 chown -R root:root "$APP"
+chmod -R a+rX "$APP/public"   # служба работает не от root: папка public и логотип должны быть доступны для чтения
 say "Устанавливаю зависимости (сжатие картинок — необязательно)"
 ( cd "$APP" && HOME=/tmp npm install --omit=dev --no-audit --no-fund --cache /tmp/npm-cache >/dev/null 2>&1 ) \
   || echo "Не удалось поставить дополнительные пакеты: картинки не будут сжиматься до 500 КБ, остальное работает."
