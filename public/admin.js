@@ -576,12 +576,13 @@ async function viewSettings() {
     <label class="f">Название школы на экране<input type="text" id="s2" value="${esc(s.school_name)}" maxlength="80"></label>
     <div class="row"><label class="f">Минимум секунд на таблице между видео<input type="number" id="s3" min="10" max="600" value="${esc(s.board_seconds)}"></label>
     <label class="f">Часов подсвечивать изменения<input type="number" id="s4" min="1" max="168" value="${esc(s.change_ttl_hours)}"></label></div>
+    <label class="check"><input type="checkbox" id="s6"${s.video_sound !== '0' ? ' checked' : ''}> Звук у роликов на экране (если браузер экрана не разрешает, звук выключится сам)</label>
     <p class="muted small" style="margin:0">Тема, ночной режим, цвета и режим показа теперь в разделе «Система» → «Оформление».</p>
     <label class="f">Часовой пояс<select id="s5">${TZ_LIST.concat(TZ_LIST.some(z => z[0] === s.tz) ? [] : [[s.tz, s.tz]]).map(([v, l]) => `<option value="${esc(v)}"${v === s.tz ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
     <div id="sm"></div><div><button class="btn primary" type="submit">Сохранить</button></div></form>`);
   document.getElementById('sf').onsubmit = async e => {
     e.preventDefault(); const m = document.getElementById('sm');
-    try { await api('PUT', '/api/admin/settings', { school_name: document.getElementById('s2').value, board_seconds: document.getElementById('s3').value, change_ttl_hours: document.getElementById('s4').value, tz: document.getElementById('s5').value });
+    try { await api('PUT', '/api/admin/settings', { school_name: document.getElementById('s2').value, board_seconds: document.getElementById('s3').value, change_ttl_hours: document.getElementById('s4').value, tz: document.getElementById('s5').value, video_sound: document.getElementById('s6').checked });
       msg(m, 'Сохранено', 'ok'); }
     catch (er) { msg(m, er.message); }
   };

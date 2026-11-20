@@ -250,8 +250,8 @@ function build(item, layer) {
   return new Promise(resolve => {
     let el;
     if (item.kind === 'video') {
-      el = document.createElement('video'); el.muted = true; el.playsInline = true; el.preload = 'auto'; // со звуком Safari не даёт автозапуск
-      el.setAttribute('muted', ''); el.setAttribute('playsinline', '');
+      el = document.createElement('video'); el.muted = !S.videoSound; el.playsInline = true; el.preload = 'auto'; // со звуком браузер может не дать автозапуск — тогда играем без звука
+      if (el.muted) el.setAttribute('muted', ''); el.setAttribute('playsinline', '');
       el.oncanplay = () => resolve(el); el.onerror = () => resolve(null);
     } else if (item.kind === 'pdf') {
       el = document.createElement('iframe'); el.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
@@ -276,7 +276,8 @@ async function playFullscreen(item) {
   $('fs').classList.add('on');
   if (item.kind === 'video') {
     await new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } };
-      el.onended = end; el.onerror = end; el.play().catch(end);
+      el.onended = end; el.onerror = end;
+      el.play().catch(() => { el.muted = true; el.play().then(() => {}, end); }); // не запустилось со звуком — пробуем без звука
       setTimeout(end, Math.max(item.duration, 5) * 1000 + 60000); });
   } else await wait(item.duration * 1000);
   return true;
