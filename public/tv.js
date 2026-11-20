@@ -259,7 +259,7 @@ function build(item, layer) {
     } else {
       el = document.createElement('img'); el.onload = () => resolve(el); el.onerror = () => resolve(null);
     }
-    el.src = item.kind === 'pdf' ? item.url + '#toolbar=0&navpanes=0' : item.url;
+    el.src = item.kind === 'pdf' ? item.url + '#page=' + (item.page || 1) + '&toolbar=0&navpanes=0' : item.url;
     layer.append(el);
     setTimeout(() => resolve(null), 15000); // битый файл не должен вешать показ
   });
@@ -288,6 +288,7 @@ async function runShow() {
     await wait(Math.max(10, S.boardSeconds || 45) * 1000);        // таблица на экране
     if (staticNow() || nightNow()) continue;                        // статичный режим и ночь: постеры не идут
     const list = weighted(S.carousel.filter(i => i.fullscreen && eligible(i)));
+    if (S.menu) list.unshift(S.menu); // меню на сегодня — первым в каждом круге
     if (!list.length) continue;
     // Расписание главное: на перемене за один заход идёт один материал (≈15–20% времени), а не три подряд.
     // Материал, который не закончится за 20 секунд до звонка, не запускаем: ученик не должен остаться без расписания.

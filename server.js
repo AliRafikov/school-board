@@ -375,6 +375,7 @@ async function adminApi(req, res, p, url, user) {
       if ('change_ttl_hours' in b) upd.change_ttl_hours = clampInt(b.change_ttl_hours, 1, 168, 24);
       if ('board_seconds' in b) upd.board_seconds = clampInt(b.board_seconds, 10, 600, 45);
       if ('video_sound' in b) upd.video_sound = b.video_sound ? '1' : '0';
+      if ('menu_start' in b) { const v = String(b.menu_start || ''); if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return fail(res, 400, 'Дата меню в формате ГГГГ-ММ-ДД'); upd.menu_start = v; }
       if ('display_mode' in b) { if (!['auto', 'static', 'active'].includes(b.display_mode)) return fail(res, 400, 'Неизвестный режим экрана'); upd.display_mode = b.display_mode; }
       // «auto» оставлен для старых страниц админки: светлая днём и чёрный экран ночью
       if ('theme' in b) { if (!['auto', 'light', 'dark'].includes(b.theme)) return fail(res, 400, 'Неизвестная тема'); if (b.theme === 'auto') { upd.theme = 'light'; if (!('night_mode' in b)) upd.night_mode = 'screen'; } else upd.theme = b.theme; }
