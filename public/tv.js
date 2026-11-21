@@ -245,13 +245,18 @@ const eligible = i => {
 const weighted = list => list.flatMap(i => Array(i.priority || 1).fill(i)); // приоритет = вес в ротации
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+// Ролик пытаемся запустить со звуком. Если браузер не разрешает звук без нажатия, запускаем без звука, а не стоим на месте.
+function playWithSound(el) {
+  return el.play().catch(() => { el.muted = true; return el.play(); });
+}
+
 function build(item, layer) {
   layer.innerHTML = '';
   return new Promise(resolve => {
     let el;
     if (item.kind === 'video') {
-      el = document.createElement('video'); el.muted = true; el.playsInline = true; el.preload = 'auto'; // со звуком Safari не даёт автозапуск
-      el.setAttribute('muted', ''); el.setAttribute('playsinline', '');
+      el = document.createElement('video'); el.playsInline = true; el.preload = 'auto'; // ролики со звуком; если браузер не разрешит — см. playWithSound
+      el.setAttribute('playsinline', '');
       el.oncanplay = () => resolve(el); el.onerror = () => resolve(null);
     } else if (item.kind === 'pdf') {
       el = document.createElement('iframe'); el.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
@@ -279,7 +284,7 @@ async function playFullscreen(item) {
   $('fs').classList.add('on');
   if (item.kind === 'video') {
     await new Promise(res => { let done = false; const end = () => { if (!done) { done = true; res(); } };
-      el.onended = end; el.onerror = end; el.play().catch(end);
+      el.onended = end; el.onerror = end; playWithSound(el).catch(end);
       setTimeout(end, Math.max(item.duration, 5) * 1000 + 60000); });
   } else await wait(item.duration * 1000);
   return true;
@@ -322,7 +327,7 @@ async function showCenter() {
   const item = list[cIdx++ % list.length], back = cl[1 - cFront];
   let ok = true;
   if (item.kind === 'text') { back.innerHTML = `<div class="ctext">${esc(item.title)}</div>`; }
-  else { const el = await build(item, back); if (seq !== centerSeq) return; ok = !!el; if (el && item.kind === 'video') el.play().catch(() => {}); }
+  else { const el = await build(item, back); if (seq !== centerSeq) return; ok = !!el; if (el && item.kind === 'video') playWithSound(el).catch(() => {}); }
   if (!ok) { cTimer = setTimeout(showCenter, 3000); return; }
   back.classList.add('on'); cl[cFront].classList.remove('on');
   $('center').classList.add('hasc');
