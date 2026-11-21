@@ -257,7 +257,11 @@ function build(item, layer) {
       el = document.createElement('iframe'); el.style.cssText = 'width:100%;height:100%;border:0;background:#fff';
       el.onload = () => resolve(el);
     } else {
-      el = document.createElement('img'); el.onload = () => resolve(el); el.onerror = () => resolve(null);
+      // картинка показывается, когда браузер её уже разобрал: без вспышки и рывка в начале перехода
+      el = document.createElement('img'); el.className = 'kb';
+      el.style.setProperty('--kb-dur', Math.max(3, item.duration || 10) + 's');
+      el.onload = () => { (el.decode ? el.decode() : Promise.resolve()).catch(() => {}).then(() => resolve(el)); };
+      el.onerror = () => resolve(null);
     }
     el.src = item.kind === 'pdf' ? item.url + '#toolbar=0&navpanes=0' : item.url;
     layer.append(el);
