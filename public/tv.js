@@ -258,8 +258,7 @@ function build(item, layer) {
       el.onload = () => resolve(el);
     } else {
       // картинка показывается, когда браузер её уже разобрал: без вспышки и рывка в начале перехода
-      el = document.createElement('img'); el.className = 'kb';
-      el.style.setProperty('--kb-dur', Math.max(3, item.duration || 10) + 's');
+      el = document.createElement('img');
       el.onload = () => { (el.decode ? el.decode() : Promise.resolve()).catch(() => {}).then(() => resolve(el)); };
       el.onerror = () => resolve(null);
     }

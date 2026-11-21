@@ -41,10 +41,6 @@ table.grid .lesson { padding:.15vw .3vw; } table.grid .lesson b { font-weight:60
 .layer { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .8s ease; background:#000; }
 .layer.on { opacity:1; }
 .layer img, .layer video { width:100%; height:100%; object-fit:contain; }
-/* плавное приближение постера за время показа (Ken Burns); только transform, поэтому не нагружает ТВ */
-@keyframes kb { from { transform:scale(1); } to { transform:scale(1.05); } }
-.kb { animation:kb var(--kb-dur, 10s) linear both; transform-origin:center; will-change:transform; }
-@media (prefers-reduced-motion: reduce) { .kb { animation:none; } }
 .layer .txt { font-size:3vw; line-height:1.25; padding:3vw; text-align:center; background:linear-gradient(135deg,#1c3a63,#0e1726); width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
 
 /* ---------- Страница просмотра ---------- */
